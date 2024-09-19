@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
 
 #include "rhiwindow.h"
+
+#include <iostream>
 #include <QPlatformSurfaceEvent>
 #include <QPainter>
 #include <QFile>
@@ -82,18 +84,30 @@ void RhiWindow::exposeEvent(QExposeEvent *)
 bool RhiWindow::event(QEvent *e)
 {
     switch (e->type()) {
-    case QEvent::UpdateRequest:
-        render();
-        break;
+        case QEvent::UpdateRequest:
+            render();
+            break;
 
-    case QEvent::PlatformSurface:
-        // this is the proper time to tear down the swapchain (while the native window and surface are still around)
-        if (static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
-            releaseSwapChain();
-        break;
+        case QEvent::PlatformSurface:
+            // this is the proper time to tear down the swapchain (while the native window and surface are still around)
+            if (static_cast<QPlatformSurfaceEvent *>(e)->surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
+                releaseSwapChain();
+            break;
 
-    default:
-        break;
+        case QEvent::MouseMove:
+            handleMouseMove(static_cast<QMouseEvent *>(e));
+            break;
+        case QEvent::MouseButtonPress:
+            handleMouseButtonPress(static_cast<QMouseEvent *>(e));
+            break;
+        case QEvent::MouseButtonRelease:
+            handleMouseButtonRelease(static_cast<QMouseEvent *>(e));
+            break;
+        case QEvent::Wheel:
+            handleWheel(static_cast<QWheelEvent *>(e));
+            break;
+        default:
+            break;
     }
 
     return QWindow::event(e);
@@ -168,7 +182,7 @@ void RhiWindow::resizeSwapChain()
     const QSize outputSize = m_sc->currentPixelSize();
     m_viewProjection = m_rhi->clipSpaceCorrMatrix();
     m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-    m_viewProjection.translate(0, 0, -4);
+    m_viewProjection.translate(0, 0, 0);
 }
 //! [swapchain-resize]
 
@@ -296,6 +310,9 @@ void HelloWindow::ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUp
 //! [render-init-1]
 void HelloWindow::customInit()
 {
+    m_timer.start();
+
+
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
 
     m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData)));
@@ -370,6 +387,10 @@ void HelloWindow::customInit()
 //! [render-1]
 void HelloWindow::customRender()
 {
+    auto nowElapsed = m_timer.elapsed();
+    m_deltaTime = (nowElapsed - m_lastElapsedMillis) / 1000.f;
+    m_lastElapsedMillis = nowElapsed;
+
     QRhiResourceUpdateBatch *resourceUpdates = m_rhi->nextResourceUpdateBatch();
 
     if (m_initialUpdates) {
@@ -380,14 +401,23 @@ void HelloWindow::customRender()
 //! [render-1]
 
 //! [render-rotation]
-    m_rotation += 1.0f;
     QMatrix4x4 modelViewProjection = m_viewProjection;
-    modelViewProjection.rotate(m_rotation, 0, 1, 0);
+
+    modelViewProjection.translate(0, 0, m_zoom);
+    modelViewProjection.rotate(m_rotationAngles.y(), 1, 0, 0);
+    modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+    // modelViewProjection.lookAt(
+    //     QVector3D(0, 0, -4 + m_rotation),
+    //     QVector3D(0, 0, 0),
+    //     QVector3D(0, 1, 0)
+    // );
+
+    // modelViewProjection.rotate(m_rotation, 0, 1, 0);
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
 //! [render-rotation]
 
 //! [render-opacity]
-    m_opacity += m_opacityDir * 0.005f;
+    // m_opacity += m_opacityDir * 0.005f;
     if (m_opacity < 0.0f || m_opacity > 1.0f) {
         m_opacityDir *= -1;
         m_opacity = qBound(0.0f, m_opacity, 1.0f);
@@ -421,4 +451,27 @@ void HelloWindow::customRender()
 
     cb->endPass();
 //! [render-pass-record]
+}
+
+void HelloWindow::handleMouseMove(QMouseEvent *event) {
+    std::cout << "HelloWindow::handleMouseMove()" << std::endl;
+    if (m_rotating) {
+        auto mousePos = event->pos();
+        auto offset = mousePos - m_lastMousePos;
+        m_rotationAngles += QVector2D(offset) * m_deltaTime * 20;
+    }
+
+    m_lastMousePos = event->pos();
+}
+
+void HelloWindow::handleMouseButtonPress(QMouseEvent *event) {
+    m_rotating = true;
+}
+
+void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
+    m_rotating = false;
+}
+
+void HelloWindow::handleWheel(QWheelEvent *event) {
+    m_zoom += event->angleDelta().y() * 0.005f;
 }

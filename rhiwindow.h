@@ -34,6 +34,20 @@ protected:
     bool m_hasSwapChain = false;
     QMatrix4x4 m_viewProjection;
 
+    virtual void handleMouseMove(QMouseEvent *event) = 0;
+    virtual void handleMouseButtonPress(QMouseEvent *event) = 0;
+    virtual void handleMouseButtonRelease(QMouseEvent *event) = 0;
+    virtual void handleWheel(QWheelEvent *event) = 0;
+
+    QPoint m_lastMousePos;
+    bool m_rotating = false;
+    QVector2D m_rotationAngles = QVector2D(0, 0);
+    float m_zoom = -4;
+
+    QElapsedTimer m_timer;
+    qint64 m_lastElapsedMillis;
+    float m_deltaTime = 0;
+
 private:
     void init();
     void resizeSwapChain();
@@ -55,6 +69,11 @@ public:
 
     void customInit() override;
     void customRender() override;
+
+    void handleMouseMove(QMouseEvent *event) override;
+    void handleMouseButtonPress(QMouseEvent *event) override;
+    void handleMouseButtonRelease(QMouseEvent *event) override;
+    void handleWheel(QWheelEvent *event) override;
 
 private:
     void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
