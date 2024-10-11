@@ -8,6 +8,10 @@
 #include <QPainter>
 #include <QFile>
 #include <rhi/qshader.h>
+#include <assimp/Importer.hpp>
+
+#include "assimp/scene.h"
+#include "vendor/assimp/include/assimp/Importer.hpp"
 
 //! [rhiwindow-ctor]
 RhiWindow::RhiWindow(QRhi::Implementation graphicsApi)
@@ -253,6 +257,13 @@ static float vertexData[] = {
      0.5f,  -0.5f,   0.0f, 0.0f, 1.0f,
 };
 
+static float vertexData2[] = {
+    // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
+     0.0f,   0.5f,   1.0f, 1.0f, 0.0f,
+    -0.5f,  -0.5f,   0.0f, 1.0f, 0.0f,
+     0.5f,  -0.5f,   0.0f, 0.0f, 1.0f,
+};
+
 //! [getshader]
 static QShader getShader(const QString &name)
 {
@@ -315,9 +326,42 @@ void HelloWindow::customInit()
 
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
 
-    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData)));
+    QFile modelFile(":/bunny.obj");
+    if (!modelFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        std::cerr << "Failed to open model file!" << std::endl;
+        exit(1);
+    }
+
+    QByteArray objData = modelFile.readAll();
+    modelFile.close();
+
+    Assimp::Importer importer;
+    auto scene = importer.ReadFileFromMemory(objData.data(), objData.length(), 0, nullptr);
+
+    if (!scene) {
+        std::cerr << "Error importing model: " << importer.GetErrorString() << std::endl;
+        exit(1);
+    }
+
+    std::cout << scene->mMeshes << std::endl;
+    auto mesh = scene->mMeshes[0];
+    auto numVertices = mesh->mNumVertices;
+
+
+    auto vertexDataBunny = new float[numVertices * 3];
+    for (int i = 0; i < numVertices; ++i) {
+        vertexDataBunny[3*i] = mesh->mVertices[i].x;
+        vertexDataBunny[3*i+1] = mesh->mVertices[i].y;
+        vertexDataBunny[3*i+2] = mesh->mVertices[i].z;
+    }
+
+    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData2)));
+    // m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexDataBunny)));
+    // m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData)));
     m_vbuf->create();
-    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
+    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData2);
+    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexDataBunny);
+    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
 
     static const quint32 UBUF_SIZE = 68;
     m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
@@ -354,9 +398,11 @@ void HelloWindow::customInit()
     });
     QRhiVertexInputLayout inputLayout;
     inputLayout.setBindings({
-        { 5 * sizeof(float) }
+        // { 3 * sizeof(float) }
+          { 5 * sizeof(float) }
     });
     inputLayout.setAttributes({
+        // { 0, 0, QRhiVertexInputAttribute::Float3, 0 },
         { 0, 0, QRhiVertexInputAttribute::Float2, 0 },
         { 0, 1, QRhiVertexInputAttribute::Float3, 2 * sizeof(float) }
     });
@@ -403,6 +449,7 @@ void HelloWindow::customRender()
 //! [render-rotation]
     QMatrix4x4 modelViewProjection = m_viewProjection;
 
+    // modelViewProjection.scale(50, 50, 50);
     modelViewProjection.translate(0, 0, m_zoom);
     modelViewProjection.rotate(m_rotationAngles.y(), 1, 0, 0);
     modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);

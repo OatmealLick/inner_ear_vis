@@ -8,6 +8,12 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui)
 
 qt_standard_project_setup()
 
+# assimp time
+set(ASSIMP_BUILD_ASSIMP_TOOLS OFF)  # Disable building the Assimp tools
+set(ASSIMP_BUILD_TESTS OFF)          # Disable building tests
+add_subdirectory("${CMAKE_SOURCE_DIR}/vendor/assimp")
+include_directories("${CMAKE_SOURCE_DIR}/vendor/assimp/include")
+
 message(STATUS "Disabling Metal feature in Qt")
 add_compile_definitions(QT_NO_METAL)
 
@@ -24,6 +30,7 @@ target_link_libraries(rhiwindow PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::GuiPrivate
+        assimp
 )
 
 set_source_files_properties("shaders/prebuilt/color.vert.qsb"
@@ -38,6 +45,9 @@ set_source_files_properties("shaders/prebuilt/quad.vert.qsb"
 set_source_files_properties("shaders/prebuilt/quad.frag.qsb"
     PROPERTIES QT_RESOURCE_ALIAS "quad.frag.qsb"
 )
+set_source_files_properties("resources/bunny.obj"
+    PROPERTIES QT_RESOURCE_ALIAS "bunny.obj"
+)
 qt_add_resources(rhiwindow "rhiwindow"
     PREFIX
         "/"
@@ -46,6 +56,7 @@ qt_add_resources(rhiwindow "rhiwindow"
         "shaders/prebuilt/color.frag.qsb"
         "shaders/prebuilt/quad.vert.qsb"
         "shaders/prebuilt/quad.frag.qsb"
+        "resources/bunny.obj"
 )
 
 install(TARGETS rhiwindow

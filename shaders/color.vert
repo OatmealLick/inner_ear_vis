@@ -12,6 +12,6 @@ layout(std140, binding = 0) uniform buf {
 
 void main()
 {
-    v_color = color;
+    v_color = vec3(1.0, 1.0, 1.0);
     gl_Position = mvp * position;
 }

@@ -11,5 +11,5 @@ layout(std140, binding = 0) uniform buf {
 
 void main()
 {
-    fragColor = vec4(v_color * opacity, opacity);
+    fragColor = vec4(v_color, 1.0);
 }
