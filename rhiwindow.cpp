@@ -10,6 +10,7 @@
 #include <rhi/qshader.h>
 #include <assimp/Importer.hpp>
 
+#include "assimp/postprocess.h"
 #include "assimp/scene.h"
 #include "vendor/assimp/include/assimp/Importer.hpp"
 
@@ -259,10 +260,16 @@ static float vertexData[] = {
 
 static float vertexData2[] = {
     // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
-     0.0f,   0.5f,   1.0f, 1.0f, 0.0f,
-    -0.5f,  -0.5f,   0.0f, 1.0f, 0.0f,
-     0.5f,  -0.5f,   0.0f, 0.0f, 1.0f,
+     0.0f,   0.5f,  0.0f, //1.0f, 1.0f, 0.0f,
+    -0.5f,  -0.5f,  0.0f, //0.0f, 1.0f, 0.0f,
+     0.5f,  -0.5f,  0.0f, //0.0f, 0.0f, 1.0f,
+
+     0.5f,   0.5f,  0.0f,
+    -0.5f,  -0.5f,  0.0f, //0.0f, 1.0f, 0.0f,
+     0.5f,  -0.5f,  0.0f, //0.0f, 0.0f, 1.0f,
 };
+
+// static float *vertexDataBunny = new float[14904 * 3];
 
 //! [getshader]
 static QShader getShader(const QString &name)
@@ -323,7 +330,6 @@ void HelloWindow::customInit()
 {
     m_timer.start();
 
-
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
 
     QFile modelFile(":/bunny.obj");
@@ -336,7 +342,12 @@ void HelloWindow::customInit()
     modelFile.close();
 
     Assimp::Importer importer;
-    auto scene = importer.ReadFileFromMemory(objData.data(), objData.length(), 0, nullptr);
+    auto scene = importer.ReadFileFromMemory(
+        objData.data(),
+        objData.length(),
+        aiProcess_Triangulate | aiProcess_GenNormals,
+        nullptr
+    );
 
     if (!scene) {
         std::cerr << "Error importing model: " << importer.GetErrorString() << std::endl;
@@ -344,24 +355,30 @@ void HelloWindow::customInit()
     }
 
     std::cout << scene->mMeshes << std::endl;
-    auto mesh = scene->mMeshes[0];
-    auto numVertices = mesh->mNumVertices;
+    const auto mesh = scene->mMeshes[0];
+    const auto numVertices = mesh->mNumVertices;
+    constexpr auto positionSize = 3;
+    constexpr auto normalSize = 3;
 
+    constexpr auto stride = positionSize + normalSize;
+    auto* vertexData = new float[numVertices * stride];
 
-    auto vertexDataBunny = new float[numVertices * 3];
     for (int i = 0; i < numVertices; ++i) {
-        vertexDataBunny[3*i] = mesh->mVertices[i].x;
-        vertexDataBunny[3*i+1] = mesh->mVertices[i].y;
-        vertexDataBunny[3*i+2] = mesh->mVertices[i].z;
+        const auto v = mesh->mVertices[i];
+        const auto n = mesh->mNormals[i];
+
+        vertexData[stride * i]     = v.x;
+        vertexData[stride * i + 1] = v.y;
+        vertexData[stride * i + 2] = v.z;
+
+        vertexData[stride * i + 3] = n.x;
+        vertexData[stride * i + 4] = n.y;
+        vertexData[stride * i + 5] = n.z;
     }
 
-    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData2)));
-    // m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexDataBunny)));
-    // m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData)));
+    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, numVertices * stride * sizeof(float)));
     m_vbuf->create();
-    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData2);
-    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexDataBunny);
-    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
+    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
 
     static const quint32 UBUF_SIZE = 68;
     m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
@@ -393,18 +410,16 @@ void HelloWindow::customInit()
     premulAlphaBlend.enable = true;
     m_colorPipeline->setTargetBlends({ premulAlphaBlend });
     m_colorPipeline->setShaderStages({
-        { QRhiShaderStage::Vertex, getShader(QLatin1String(":/color.vert.qsb")) },
-        { QRhiShaderStage::Fragment, getShader(QLatin1String(":/color.frag.qsb")) }
+        { QRhiShaderStage::Vertex, getShader(QLatin1String(":/shaders/color.vert.qsb")) },
+        { QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/color.frag.qsb")) }
     });
     QRhiVertexInputLayout inputLayout;
     inputLayout.setBindings({
-        // { 3 * sizeof(float) }
-          { 5 * sizeof(float) }
+         { stride * sizeof(float) }
     });
     inputLayout.setAttributes({
-        // { 0, 0, QRhiVertexInputAttribute::Float3, 0 },
-        { 0, 0, QRhiVertexInputAttribute::Float2, 0 },
-        { 0, 1, QRhiVertexInputAttribute::Float3, 2 * sizeof(float) }
+        { 0, 0, QRhiVertexInputAttribute::Float3, 0 },
+        { 0, 1, QRhiVertexInputAttribute::Float3, 3 * sizeof(float) },
     });
     m_colorPipeline->setVertexInputLayout(inputLayout);
     m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
@@ -421,8 +436,8 @@ void HelloWindow::customInit()
 
     m_fullscreenQuadPipeline.reset(m_rhi->newGraphicsPipeline());
     m_fullscreenQuadPipeline->setShaderStages({
-        { QRhiShaderStage::Vertex, getShader(QLatin1String(":/quad.vert.qsb")) },
-        { QRhiShaderStage::Fragment, getShader(QLatin1String(":/quad.frag.qsb")) }
+        { QRhiShaderStage::Vertex, getShader(QLatin1String(":/shaders/quad.vert.qsb")) },
+        { QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/quad.frag.qsb")) }
     });
     m_fullscreenQuadPipeline->setVertexInputLayout({});
     m_fullscreenQuadPipeline->setShaderResourceBindings(m_fullscreenQuadSrb.get());
@@ -449,8 +464,9 @@ void HelloWindow::customRender()
 //! [render-rotation]
     QMatrix4x4 modelViewProjection = m_viewProjection;
 
-    // modelViewProjection.scale(50, 50, 50);
-    modelViewProjection.translate(0, 0, m_zoom);
+    // modelViewProjection.scale(100);
+    constexpr auto yOffset = -0.1f;
+    modelViewProjection.translate(0, yOffset, m_zoom);
     modelViewProjection.rotate(m_rotationAngles.y(), 1, 0, 0);
     modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
     // modelViewProjection.lookAt(
@@ -465,10 +481,10 @@ void HelloWindow::customRender()
 
 //! [render-opacity]
     // m_opacity += m_opacityDir * 0.005f;
-    if (m_opacity < 0.0f || m_opacity > 1.0f) {
-        m_opacityDir *= -1;
-        m_opacity = qBound(0.0f, m_opacity, 1.0f);
-    }
+    // if (m_opacity < 0.0f || m_opacity > 1.0f) {
+    //     m_opacityDir *= -1;
+    //     m_opacity = qBound(0.0f, m_opacity, 1.0f);
+    // }
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 64, 4, &m_opacity);
 //! [render-opacity]
 
@@ -484,24 +500,27 @@ void HelloWindow::customRender()
     cb->beginPass(m_sc->currentFrameRenderTarget(), Qt::black, { 1.0f, 0 }, resourceUpdates);
 //! [render-pass]
 
-    cb->setGraphicsPipeline(m_fullscreenQuadPipeline.get());
+    // cb->setGraphicsPipeline(m_fullscreenQuadPipeline.get());
     cb->setViewport({ 0, 0, float(outputSizeInPixels.width()), float(outputSizeInPixels.height()) });
-    cb->setShaderResources();
-    cb->draw(3);
+    // cb->setShaderResources();
+    // // todo
+    auto numVertices = 14904;
+    // cb->draw(numVertices);
+    // cb->draw(6);
 
 //! [render-pass-record]
     cb->setGraphicsPipeline(m_colorPipeline.get());
     cb->setShaderResources();
     const QRhiCommandBuffer::VertexInput vbufBinding(m_vbuf.get(), 0);
     cb->setVertexInput(0, 1, &vbufBinding);
-    cb->draw(3);
+    cb->draw(numVertices);
+    // cb->draw(6);
 
     cb->endPass();
 //! [render-pass-record]
 }
 
 void HelloWindow::handleMouseMove(QMouseEvent *event) {
-    std::cout << "HelloWindow::handleMouseMove()" << std::endl;
     if (m_rotating) {
         auto mousePos = event->pos();
         auto offset = mousePos - m_lastMousePos;

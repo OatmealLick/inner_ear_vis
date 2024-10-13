@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 project(rhiwindow LANGUAGES CXX)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui)
+find_package(Qt6 COMPONENTS ShaderTools)
 
 qt_standard_project_setup()
 
@@ -33,30 +34,36 @@ target_link_libraries(rhiwindow PRIVATE
         assimp
 )
 
-set_source_files_properties("shaders/prebuilt/color.vert.qsb"
-    PROPERTIES QT_RESOURCE_ALIAS "color.vert.qsb"
+set_source_files_properties("shaders/color.vert.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "color.vert.qsb"
 )
-set_source_files_properties("shaders/prebuilt/color.frag.qsb"
-    PROPERTIES QT_RESOURCE_ALIAS "color.frag.qsb"
+set_source_files_properties("shaders/color.frag.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "color.frag.qsb"
 )
-set_source_files_properties("shaders/prebuilt/quad.vert.qsb"
-    PROPERTIES QT_RESOURCE_ALIAS "quad.vert.qsb"
+set_source_files_properties("shaders/quad.vert.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "quad.vert.qsb"
 )
-set_source_files_properties("shaders/prebuilt/quad.frag.qsb"
-    PROPERTIES QT_RESOURCE_ALIAS "quad.frag.qsb"
+set_source_files_properties("shaders/quad.frag.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "quad.frag.qsb"
 )
 set_source_files_properties("resources/bunny.obj"
-    PROPERTIES QT_RESOURCE_ALIAS "bunny.obj"
+        PROPERTIES QT_RESOURCE_ALIAS "bunny.obj"
 )
+
 qt_add_resources(rhiwindow "rhiwindow"
     PREFIX
         "/"
     FILES
-        "shaders/prebuilt/color.vert.qsb"
-        "shaders/prebuilt/color.frag.qsb"
-        "shaders/prebuilt/quad.vert.qsb"
-        "shaders/prebuilt/quad.frag.qsb"
         "resources/bunny.obj"
+)
+qt_add_shaders(rhiwindow "rhiwindow_shaders"
+        PREFIX
+        "/"
+        FILES
+        "shaders/color.vert"
+        "shaders/color.frag"
+        "shaders/quad.vert"
+        "shaders/quad.frag"
 )
 
 install(TARGETS rhiwindow
