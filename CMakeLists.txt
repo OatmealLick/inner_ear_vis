@@ -21,6 +21,9 @@ add_compile_definitions(QT_NO_METAL)
 qt_add_executable(rhiwindow
     main.cpp
     rhiwindow.cpp rhiwindow.h
+        stb_image.h
+        Entity.cpp
+        Entity.h
 )
 
 set_target_properties(rhiwindow PROPERTIES
@@ -49,12 +52,16 @@ set_source_files_properties("shaders/quad.frag.qsb"
 set_source_files_properties("resources/bunny.obj"
         PROPERTIES QT_RESOURCE_ALIAS "bunny.obj"
 )
+set_source_files_properties("resources/inner_ear.fbx"
+        PROPERTIES QT_RESOURCE_ALIAS "inner_ear.fbx"
+)
 
 qt_add_resources(rhiwindow "rhiwindow"
     PREFIX
         "/"
     FILES
         "resources/bunny.obj"
+        "resources/inner_ear.fbx"
 )
 qt_add_shaders(rhiwindow "rhiwindow_shaders"
         PREFIX

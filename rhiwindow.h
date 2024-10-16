@@ -8,6 +8,8 @@
 #include <QOffscreenSurface>
 #include <rhi/qrhi.h>
 
+#include "assimp/texture.h"
+
 class RhiWindow : public QWindow
 {
 public:
@@ -77,6 +79,7 @@ public:
 
 private:
     void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
+    unsigned int loadTexture(const aiTexture *texture);
 
     std::unique_ptr<QRhiBuffer> m_vbuf;
     std::unique_ptr<QRhiBuffer> m_ubuf;
