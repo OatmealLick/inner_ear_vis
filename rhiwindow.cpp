@@ -248,31 +248,6 @@ void RhiWindow::render() {
     requestUpdate();
 }
 
-//! [request-update]
-
-static float vertexData[] = {
-    // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
-    0.0f, 0.5f, 1.0f, 0.0f, 0.0f,
-    -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-};
-
-static float vertexData2[] = {
-    // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
-    0.0f, 0.5f, 0.0f, //1.0f, 1.0f, 0.0f,
-    -0.5f, -0.5f, 0.0f, //0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, //0.0f, 0.0f, 1.0f,
-
-    0.5f, 0.5f, 0.0f,
-    -0.5f, -0.5f, 0.0f, //0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, //0.0f, 0.0f, 1.0f,
-};
-
-static unsigned int totalNumVertices = 0;
-
-// static float *vertexDataBunny = new float[14904 * 3];
-
-//! [getshader]
 static QShader getShader(const QString &name) {
     QFile f(name);
     if (f.open(QIODevice::ReadOnly))
@@ -288,61 +263,48 @@ HelloWindow::HelloWindow(QRhi::Implementation graphicsApi)
 }
 
 //! [ensure-texture]
-void HelloWindow::ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u) {
-    if (m_texture && m_texture->pixelSize() == pixelSize)
-        return;
-
-    if (!m_texture)
-        m_texture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, pixelSize));
-    else
-        m_texture->setPixelSize(pixelSize);
-
-    m_texture->create();
-
-    QImage image(pixelSize, QImage::Format_RGBA8888_Premultiplied);
-    image.setDevicePixelRatio(devicePixelRatio());
-    //! [ensure-texture]
-    QPainter painter(&image);
-    painter.fillRect(QRectF(QPointF(0, 0), size()), QColor::fromRgbF(0.4f, 0.7f, 0.0f, 1.0f));
-    painter.setPen(Qt::transparent);
-    painter.setBrush({QGradient(QGradient::DeepBlue)});
-    painter.drawRoundedRect(QRectF(QPointF(20, 20), size() - QSize(40, 40)), 16, 16);
-    painter.setPen(Qt::black);
-    QFont font;
-    font.setPixelSize(0.05 * qMin(width(), height()));
-    painter.setFont(font);
-    painter.drawText(QRectF(QPointF(60, 60), size() - QSize(120, 120)), 0,
-                     QLatin1String(
-                         "Rendering with QRhi to a resizable QWindow.\nThe 3D API is %1.\nUse the command-line options to choose a different API.")
-                     .arg(graphicsApiName()));
-    painter.end();
-
-    if (m_rhi->isYUpInNDC())
-        image = image.mirrored();
-
-    //! [ensure-texture-2]
-    u->uploadTexture(m_texture.get(), image);
-    //! [ensure-texture-2]
-}
-
-unsigned int HelloWindow::loadTexture(const aiTexture *texture) {
-    return 0;
-}
+// void HelloWindow::ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u) {
+//     if (m_texture && m_texture->pixelSize() == pixelSize)
+//         return;
+//
+//     if (!m_texture)
+//         m_texture.reset(m_rhi->newTexture(QRhiTexture::RGBA8, pixelSize));
+//     else
+//         m_texture->setPixelSize(pixelSize);
+//
+//     m_texture->create();
+//
+//     QImage image(pixelSize, QImage::Format_RGBA8888_Premultiplied);
+//     image.setDevicePixelRatio(devicePixelRatio());
+//     //! [ensure-texture]
+//     QPainter painter(&image);
+//     painter.fillRect(QRectF(QPointF(0, 0), size()), QColor::fromRgbF(0.4f, 0.7f, 0.0f, 1.0f));
+//     painter.setPen(Qt::transparent);
+//     painter.setBrush({QGradient(QGradient::DeepBlue)});
+//     painter.drawRoundedRect(QRectF(QPointF(20, 20), size() - QSize(40, 40)), 16, 16);
+//     painter.setPen(Qt::black);
+//     QFont font;
+//     font.setPixelSize(0.05 * qMin(width(), height()));
+//     painter.setFont(font);
+//     painter.drawText(QRectF(QPointF(60, 60), size() - QSize(120, 120)), 0,
+//                      QLatin1String(
+//                          "Rendering with QRhi to a resizable QWindow.\nThe 3D API is %1.\nUse the command-line options to choose a different API.")
+//                      .arg(graphicsApiName()));
+//     painter.end();
+//
+//     if (m_rhi->isYUpInNDC())
+//         image = image.mirrored();
+//
+//     //! [ensure-texture-2]
+//     u->uploadTexture(m_texture.get(), image);
+//     //! [ensure-texture-2]
+// }
 
 //! [render-init-1]
 void HelloWindow::customInit() {
     m_timer.start();
 
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
-
-    // QFile modelFile(":/bunny.obj");
-    // if (!modelFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    //     std::cerr << "Failed to open model file!" << std::endl;
-    //     exit(1);
-    // }
-    //
-    // QByteArray objData = modelFile.readAll();
-    // modelFile.close();
 
     Assimp::Importer importer;
     const auto scene = importer.ReadFile(
@@ -355,51 +317,9 @@ void HelloWindow::customInit() {
         exit(1);
     }
 
-    constexpr auto positionSize = 3;
-    constexpr auto normalSize = 3;
-    constexpr auto textureCoords = 2;
-    constexpr auto stride = positionSize + normalSize + textureCoords;
+    std::unordered_map<unsigned int, QRhiTexture*> materialIndexToTexture;
+    // std::vector<QRhiTexture *> textures;
 
-    totalNumVertices = 0;
-    for (int i = 0; i < scene->mNumMeshes; ++i) {
-        const auto mesh = scene->mMeshes[i];
-        totalNumVertices += mesh->mNumVertices;
-    }
-
-    auto *vertexData = new float[totalNumVertices * stride];
-    unsigned int offset = 0;
-    for (int j = 0; j < scene->mNumMeshes; ++j) {
-        const auto mesh = scene->mMeshes[j];
-
-        assert(mesh->HasTextureCoords(0));
-
-        for (int i = 0; i < mesh->mNumVertices; ++i) {
-            const auto v = mesh->mVertices[i];
-            const auto n = mesh->mNormals[i];
-            const auto t = mesh->mTextureCoords[0][i];
-
-            vertexData[offset + stride * i] = v.x / 1000.0f;
-            vertexData[offset + stride * i + 1] = v.y / 1000.0f;
-            vertexData[offset + stride * i + 2] = v.z / 1000.0f;
-
-            vertexData[offset + stride * i + 3] = n.x;
-            vertexData[offset + stride * i + 4] = n.y;
-            vertexData[offset + stride * i + 5] = n.z;
-
-            vertexData[offset + stride * i + 6] = t.x;
-            vertexData[offset + stride * i + 7] = t.y;
-        }
-
-        offset += mesh->mNumVertices * stride;
-    }
-
-
-    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
-                                  totalNumVertices * stride * sizeof(float)));
-    m_vbuf->create();
-    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
-
-    std::vector<QRhiTexture *> textures;
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         const aiMaterial *material = scene->mMaterials[i];
 
@@ -454,40 +374,44 @@ void HelloWindow::customInit() {
         QImage image(rgbaData, width, height, QImage::Format_RGBA8888);
         // image.setDevicePixelRatio(devicePixelRatio());
         // image.data_ptr() = data;
-        m_initialUpdates->uploadTexture(texture, image);
+        // m_initialUpdates->uploadTexture(texture, image);
 
-        textures.push_back(texture);
+        // textures.push_back(texture);
+        materialIndexToTexture[i] = texture;
         // todo
         // stbi_image_free(data);
     }
 
-    static const quint32 UBUF_SIZE = 68;
-    m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
-    m_ubuf->create();
-    //! [render-init-1]
-
-    ensureFullscreenTexture(m_sc->surfacePixelSize(), m_initialUpdates);
+    constexpr auto positionSize = 3;
+    constexpr auto normalSize = 3;
+    constexpr auto textureCoords = 2;
+    constexpr auto stride = positionSize + normalSize + textureCoords;
 
     m_sampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
                                       QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
     m_sampler->create();
 
-    //! [render-init-2]
-    m_colorTriSrb.reset(m_rhi->newShaderResourceBindings());
-    static constexpr QRhiShaderResourceBinding::StageFlags visibility =
-            QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
+    static const quint32 UBUF_SIZE = 68;
+    m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
+    m_ubuf->create();
 
-    // todo if rendered together, could be on the same texture
-    m_colorTriSrb->setBindings({
-        QRhiShaderResourceBinding::uniformBuffer(0, visibility, m_ubuf.get()),
-        QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
-                                                  textures.at(5), m_sampler.get())
-    });
-    m_colorTriSrb->create();
+    m_entities.reserve(10);
+    for (int j = 0; j < scene->mNumMeshes; ++j) {
+        const auto mesh = scene->mMeshes[j];
+
+        assert(mesh->HasPositions());
+        assert(mesh->HasNormals());
+        assert(mesh->HasTextureCoords(0));
+
+        m_entities.emplace_back(*mesh, nullptr, nullptr, *m_rhi, m_initialUpdates, m_ubuf.get());
+        // m_entities.emplace_back(*mesh, materialIndexToTexture[mesh->mMaterialIndex], m_sampler.get(), *m_rhi, m_initialUpdates, m_ubuf.get());
+    }
+
+    //! [render-init-1]
+
+    // ensureFullscreenTexture(m_sc->surfacePixelSize(), m_initialUpdates);
 
     m_colorPipeline.reset(m_rhi->newGraphicsPipeline());
-    // Enable depth testing; not quite needed for a simple triangle, but we
-    // have a depth-stencil buffer so why not.
     m_colorPipeline->setDepthTest(true);
     m_colorPipeline->setDepthWrite(true);
     // Blend factors default to One, OneOneMinusSrcAlpha, which is convenient.
@@ -508,27 +432,28 @@ void HelloWindow::customInit() {
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
     });
     m_colorPipeline->setVertexInputLayout(inputLayout);
-    m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
+    // in theory we can swap this at runtime
+    // m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
     m_colorPipeline->setRenderPassDescriptor(m_rp.get());
     m_colorPipeline->create();
     //! [render-init-2]
 
-    m_fullscreenQuadSrb.reset(m_rhi->newShaderResourceBindings());
-    m_fullscreenQuadSrb->setBindings({
-        QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage,
-                                                  m_texture.get(), m_sampler.get())
-    });
-    m_fullscreenQuadSrb->create();
-
-    m_fullscreenQuadPipeline.reset(m_rhi->newGraphicsPipeline());
-    m_fullscreenQuadPipeline->setShaderStages({
-        {QRhiShaderStage::Vertex, getShader(QLatin1String(":/shaders/quad.vert.qsb"))},
-        {QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/quad.frag.qsb"))}
-    });
-    m_fullscreenQuadPipeline->setVertexInputLayout({});
-    m_fullscreenQuadPipeline->setShaderResourceBindings(m_fullscreenQuadSrb.get());
-    m_fullscreenQuadPipeline->setRenderPassDescriptor(m_rp.get());
-    m_fullscreenQuadPipeline->create();
+    // m_fullscreenQuadSrb.reset(m_rhi->newShaderResourceBindings());
+    // m_fullscreenQuadSrb->setBindings({
+    //     QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage,
+    //                                               m_texture.get(), m_sampler.get())
+    // });
+    // m_fullscreenQuadSrb->create();
+    //
+    // m_fullscreenQuadPipeline.reset(m_rhi->newGraphicsPipeline());
+    // m_fullscreenQuadPipeline->setShaderStages({
+    //     {QRhiShaderStage::Vertex, getShader(QLatin1String(":/shaders/quad.vert.qsb"))},
+    //     {QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/quad.frag.qsb"))}
+    // });
+    // m_fullscreenQuadPipeline->setVertexInputLayout({});
+    // m_fullscreenQuadPipeline->setShaderResourceBindings(m_fullscreenQuadSrb.get());
+    // m_fullscreenQuadPipeline->setRenderPassDescriptor(m_rp.get());
+    // m_fullscreenQuadPipeline->create();
 }
 
 //! [render-1]
@@ -549,29 +474,15 @@ void HelloWindow::customRender() {
     //! [render-rotation]
     QMatrix4x4 modelViewProjection = m_viewProjection;
 
-    // modelViewProjection.scale(100);
     constexpr auto yOffset = -0.1f;
     modelViewProjection.translate(0, yOffset, m_zoom);
     modelViewProjection.rotate(m_rotationAngles.y(), 1, 0, 0);
     modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
-    // modelViewProjection.lookAt(
-    //     QVector3D(0, 0, -4 + m_rotation),
-    //     QVector3D(0, 0, 0),
-    //     QVector3D(0, 1, 0)
-    // );
 
-    // modelViewProjection.rotate(m_rotation, 0, 1, 0);
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
     //! [render-rotation]
 
-    //! [render-opacity]
-    // m_opacity += m_opacityDir * 0.005f;
-    // if (m_opacity < 0.0f || m_opacity > 1.0f) {
-    //     m_opacityDir *= -1;
-    //     m_opacity = qBound(0.0f, m_opacity, 1.0f);
-    // }
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 64, 4, &m_opacity);
-    //! [render-opacity]
 
     //! [render-cb]
     QRhiCommandBuffer *cb = m_sc->currentFrameCommandBuffer();
@@ -579,7 +490,7 @@ void HelloWindow::customRender() {
     //! [render-cb]
 
     // (re)create the texture with a size matching the output surface size, when necessary.
-    ensureFullscreenTexture(outputSizeInPixels, resourceUpdates);
+    // ensureFullscreenTexture(outputSizeInPixels, resourceUpdates);
 
     //! [render-pass]
     cb->beginPass(m_sc->currentFrameRenderTarget(), Qt::black, {1.0f, 0}, resourceUpdates);
@@ -588,17 +499,21 @@ void HelloWindow::customRender() {
     // cb->setGraphicsPipeline(m_fullscreenQuadPipeline.get());
     cb->setViewport({0, 0, float(outputSizeInPixels.width()), float(outputSizeInPixels.height())});
     // cb->setShaderResources();
-    // // todo
-    const auto numVertices = totalNumVertices;
-    // cb->draw(numVertices);
     // cb->draw(6);
 
     //! [render-pass-record]
-    cb->setGraphicsPipeline(m_colorPipeline.get());
-    cb->setShaderResources();
-    const QRhiCommandBuffer::VertexInput vbufBinding(m_vbuf.get(), 0);
-    cb->setVertexInput(0, 1, &vbufBinding);
-    cb->draw(numVertices);
+    for (const auto& entity : m_entities) {
+        m_colorPipeline->setShaderResourceBindings(entity.m_colorTriSrb.get());
+        cb->setGraphicsPipeline(m_colorPipeline.get());
+        cb->setShaderResources();
+
+        // cb->setGraphicsPipeline(m_colorPipeline.get());
+        // cb->setShaderResources(entity.m_colorTriSrb.get());
+
+        const QRhiCommandBuffer::VertexInput vbufBinding(entity.m_vbuf.get(), 0);
+        cb->setVertexInput(0, 1, &vbufBinding);
+        cb->draw(entity.GetNumVertices());
+    }
     // cb->draw(6);
 
     cb->endPass();
@@ -607,8 +522,8 @@ void HelloWindow::customRender() {
 
 void HelloWindow::handleMouseMove(QMouseEvent *event) {
     if (m_rotating) {
-        auto mousePos = event->pos();
-        auto offset = mousePos - m_lastMousePos;
+        const auto mousePos = event->pos();
+        const auto offset = mousePos - m_lastMousePos;
         m_rotationAngles += QVector2D(offset) * m_deltaTime * 20;
     }
 

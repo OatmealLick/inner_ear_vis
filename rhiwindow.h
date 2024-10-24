@@ -8,6 +8,7 @@
 #include <QOffscreenSurface>
 #include <rhi/qrhi.h>
 
+#include "Entity.h"
 #include "assimp/texture.h"
 
 class RhiWindow : public QWindow
@@ -78,17 +79,17 @@ public:
     void handleWheel(QWheelEvent *event) override;
 
 private:
-    void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
-    unsigned int loadTexture(const aiTexture *texture);
+    // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
-    std::unique_ptr<QRhiBuffer> m_vbuf;
+    // std::unique_ptr<QRhiBuffer> m_vbuf;
     std::unique_ptr<QRhiBuffer> m_ubuf;
-    std::unique_ptr<QRhiTexture> m_texture;
+    // std::unique_ptr<QRhiTexture> m_texture;
     std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiShaderResourceBindings> m_colorTriSrb;
     std::unique_ptr<QRhiGraphicsPipeline> m_colorPipeline;
     std::unique_ptr<QRhiShaderResourceBindings> m_fullscreenQuadSrb;
     std::unique_ptr<QRhiGraphicsPipeline> m_fullscreenQuadPipeline;
+
+    std::vector<Entity> m_entities;
 
     QRhiResourceUpdateBatch *m_initialUpdates = nullptr;
 
