@@ -250,24 +250,6 @@ void RhiWindow::render() {
 
 //! [request-update]
 
-static float vertexData[] = {
-    // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
-    0.0f, 0.5f, 1.0f, 0.0f, 0.0f,
-    -0.5f, -0.5f, 0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, 0.0f, 1.0f,
-};
-
-static float vertexData2[] = {
-    // Y up (note clipSpaceCorrMatrix in m_viewProjection), CCW
-    0.0f, 0.5f, 0.0f, //1.0f, 1.0f, 0.0f,
-    -0.5f, -0.5f, 0.0f, //0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, //0.0f, 0.0f, 1.0f,
-
-    0.5f, 0.5f, 0.0f,
-    -0.5f, -0.5f, 0.0f, //0.0f, 1.0f, 0.0f,
-    0.5f, -0.5f, 0.0f, //0.0f, 0.0f, 1.0f,
-};
-
 static unsigned int totalNumVertices = 0;
 
 // static float *vertexDataBunny = new float[14904 * 3];
@@ -325,33 +307,21 @@ void HelloWindow::ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUp
     //! [ensure-texture-2]
 }
 
-unsigned int HelloWindow::loadTexture(const aiTexture *texture) {
-    return 0;
-}
-
 //! [render-init-1]
 void HelloWindow::customInit() {
     m_timer.start();
 
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
 
-    // QFile modelFile(":/bunny.obj");
-    // if (!modelFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-    //     std::cerr << "Failed to open model file!" << std::endl;
-    //     exit(1);
-    // }
-    //
-    // QByteArray objData = modelFile.readAll();
-    // modelFile.close();
-
-    Assimp::Importer importer;
-    const auto scene = importer.ReadFile(
+    // todo figure our ownership of scene?
+    const auto importer = new Assimp::Importer();
+    scene = importer->ReadFile(
         "../resources/inner_ear.fbx",
         aiProcess_Triangulate
     );
 
     if (!scene) {
-        std::cerr << "Error importing model: " << importer.GetErrorString() << std::endl;
+        std::cerr << "Error importing model: " << importer->GetErrorString() << std::endl;
         exit(1);
     }
 
@@ -366,38 +336,43 @@ void HelloWindow::customInit() {
         totalNumVertices += mesh->mNumVertices;
     }
 
-    auto *vertexData = new float[totalNumVertices * stride];
-    unsigned int offset = 0;
+    const auto vertexDataMain = new float*[scene->mNumMeshes];
+
     for (int j = 0; j < scene->mNumMeshes; ++j) {
         const auto mesh = scene->mMeshes[j];
+        auto *vertexData = new float[mesh->mNumVertices * stride];
 
         assert(mesh->HasTextureCoords(0));
 
         for (int i = 0; i < mesh->mNumVertices; ++i) {
             const auto v = mesh->mVertices[i];
             const auto n = mesh->mNormals[i];
-            const auto t = mesh->mTextureCoords[0][i];
+            const auto t = mesh->mTextureCoords[0][i]; // all zeroes!
 
-            vertexData[offset + stride * i] = v.x / 1000.0f;
-            vertexData[offset + stride * i + 1] = v.y / 1000.0f;
-            vertexData[offset + stride * i + 2] = v.z / 1000.0f;
-
-            vertexData[offset + stride * i + 3] = n.x;
-            vertexData[offset + stride * i + 4] = n.y;
-            vertexData[offset + stride * i + 5] = n.z;
-
-            vertexData[offset + stride * i + 6] = t.x;
-            vertexData[offset + stride * i + 7] = t.y;
+            vertexData[stride * i] = v.x / 1000.0f;
+            vertexData[stride * i + 1] = v.y / 1000.0f;
+            vertexData[stride * i + 2] = v.z / 1000.0f;
+            vertexData[stride * i + 3] = n.x;
+            vertexData[stride * i + 4] = n.y;
+            vertexData[stride * i + 5] = n.z;
+            vertexData[stride * i + 6] = t.x;
+            vertexData[stride * i + 7] = t.y;
         }
 
-        offset += mesh->mNumVertices * stride;
+        vertexDataMain[j] = vertexData;
     }
 
 
-    m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
-                                  totalNumVertices * stride * sizeof(float)));
-    m_vbuf->create();
-    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
+    m_vbufs.reserve(10);
+    for (int i = 0; i < scene->mNumMeshes; ++i) {
+        const auto mesh = scene->mMeshes[i];
+        const auto buffer = m_rhi->newBuffer(
+            QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, mesh->mNumVertices * stride * sizeof(float)
+        );
+        buffer->create();
+        m_initialUpdates->uploadStaticBuffer(buffer, vertexDataMain[i]);
+        m_vbufs.push_back(buffer);
+    }
 
     std::vector<QRhiTexture *> textures;
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
@@ -477,7 +452,6 @@ void HelloWindow::customInit() {
     static constexpr QRhiShaderResourceBinding::StageFlags visibility =
             QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
 
-    // todo if rendered together, could be on the same texture
     m_colorTriSrb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(0, visibility, m_ubuf.get()),
         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
@@ -508,7 +482,6 @@ void HelloWindow::customInit() {
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
     });
     m_colorPipeline->setVertexInputLayout(inputLayout);
-    m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
     m_colorPipeline->setRenderPassDescriptor(m_rp.get());
     m_colorPipeline->create();
     //! [render-init-2]
@@ -594,11 +567,16 @@ void HelloWindow::customRender() {
     // cb->draw(6);
 
     //! [render-pass-record]
+    m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
+    m_colorPipeline->create();
     cb->setGraphicsPipeline(m_colorPipeline.get());
     cb->setShaderResources();
-    const QRhiCommandBuffer::VertexInput vbufBinding(m_vbuf.get(), 0);
-    cb->setVertexInput(0, 1, &vbufBinding);
-    cb->draw(numVertices);
+    for (int i = 0; i < scene->mNumMeshes; ++i) {
+        const auto mesh = scene->mMeshes[i];
+        const QRhiCommandBuffer::VertexInput vbufBinding(m_vbufs[i], 0);
+        cb->setVertexInput(0, 1, &vbufBinding);
+        cb->draw(mesh->mNumVertices);
+    }
     // cb->draw(6);
 
     cb->endPass();

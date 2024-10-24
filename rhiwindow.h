@@ -9,6 +9,7 @@
 #include <rhi/qrhi.h>
 
 #include "assimp/texture.h"
+#include "assimp/scene.h"
 
 class RhiWindow : public QWindow
 {
@@ -79,9 +80,11 @@ public:
 
 private:
     void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
-    unsigned int loadTexture(const aiTexture *texture);
 
+    const aiScene *scene;
+    // std::unique_ptr<const aiScene> m_scene;
     std::unique_ptr<QRhiBuffer> m_vbuf;
+    std::vector<QRhiBuffer*> m_vbufs;
     std::unique_ptr<QRhiBuffer> m_ubuf;
     std::unique_ptr<QRhiTexture> m_texture;
     std::unique_ptr<QRhiSampler> m_sampler;
