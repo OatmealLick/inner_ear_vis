@@ -20,9 +20,13 @@ void main()
     float diff = max(dot(light_dir, v_normal), 0.0);
     vec3 diffuse = light_color * diff;
 
-    vec3 diff_color = texture(diffuse_texture, v_tex_coords).rgb;
-    vec3 ambient = vec3(0.2, 0.2, 0.2);
+    // one mesh doesn't have UV coordinates / texture, a small hack :)
+    vec3 diff_color = vec3(0.9, 0.8, 0.9);
+    if (v_tex_coords.x > 0.001) {
+        diff_color = texture(diffuse_texture, v_tex_coords).xyz;
+    }
+
+    vec3 ambient = vec3(0.4, 0.4, 0.4);
     vec3 result = (ambient + diffuse) * diff_color;
-    //vec3 result = (ambient + diffuse) * v_color;
     fragColor = vec4(result, 1.0);
 }

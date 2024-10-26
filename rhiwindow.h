@@ -8,8 +8,8 @@
 #include <QOffscreenSurface>
 #include <rhi/qrhi.h>
 
+#include "Entity.h"
 #include "assimp/texture.h"
-#include "assimp/scene.h"
 
 class RhiWindow : public QWindow
 {
@@ -45,7 +45,7 @@ protected:
     QPoint m_lastMousePos;
     bool m_rotating = false;
     QVector2D m_rotationAngles = QVector2D(0, 0);
-    float m_zoom = -4;
+    float m_zoom = -2.5;
 
     QElapsedTimer m_timer;
     qint64 m_lastElapsedMillis;
@@ -79,19 +79,21 @@ public:
     void handleWheel(QWheelEvent *event) override;
 
 private:
-    void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
+    // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
-    const aiScene *scene;
-    // std::unique_ptr<const aiScene> m_scene;
-    std::unique_ptr<QRhiBuffer> m_vbuf;
-    std::vector<QRhiBuffer*> m_vbufs;
     std::unique_ptr<QRhiBuffer> m_ubuf;
-    std::unique_ptr<QRhiTexture> m_texture;
     std::unique_ptr<QRhiSampler> m_sampler;
-    std::unique_ptr<QRhiShaderResourceBindings> m_colorTriSrb;
     std::unique_ptr<QRhiGraphicsPipeline> m_colorPipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_fullscreenQuadSrb;
+
     std::unique_ptr<QRhiGraphicsPipeline> m_fullscreenQuadPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_fullscreenQuadSrb;
+
+    std::unique_ptr<QRhiGraphicsPipeline> m_rayPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_raySrb;
+    std::unique_ptr<QRhiBuffer> m_rayVertexBuffer;
+    std::unique_ptr<QRhiBuffer> m_rayUniformBuffer;
+
+    std::vector<Entity> m_entities;
 
     QRhiResourceUpdateBatch *m_initialUpdates = nullptr;
 
