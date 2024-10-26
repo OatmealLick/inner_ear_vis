@@ -19,12 +19,18 @@ Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, Q
 
     auto *vertexData = new float[mesh.mNumVertices * stride];
 
+    auto max = std::numeric_limits<float>::min();
+    auto min = std::numeric_limits<float>::max();
+
+    for (int i = 0; i < mesh.mNumVertices; i++) {
+        max = std::max(max, mesh.mVertices[i].x);
+        min = std::min(min, mesh.mVertices[i].x);
+    }
+
     for (int i = 0; i < mesh.mNumVertices; ++i) {
         const auto v = mesh.mVertices[i];
         const auto n = mesh.mNormals[i];
         const auto t = mesh.mTextureCoords[0][i];
-
-        std::cout << "T: " << t.x << ", " << t.y << std::endl;
 
         vertexData[stride * i] = v.x / 1000.0f;
         vertexData[stride * i + 1] = v.y / 1000.0f;
@@ -34,8 +40,8 @@ Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, Q
         vertexData[stride * i + 4] = n.y;
         vertexData[stride * i + 5] = n.z;
 
-        vertexData[stride * i + 6] = t.x; // why all zeroes
-        vertexData[stride * i + 7] = t.y;
+        vertexData[stride * i + 6] = t.x;
+        vertexData[stride * i + 7] = 1.0f - t.y;  // flipping the y coordinate for pipeline to handle properly
     }
 
     m_vbuf.reset(m_rhi.newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
@@ -49,8 +55,8 @@ Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, Q
 
     m_colorTriSrb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(0, visibility, ubuf),
-        // QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
-        //                                           texture, sampler)
+        QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
+                                                  texture, sampler)
     });
     m_colorTriSrb->create();
 }

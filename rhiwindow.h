@@ -45,7 +45,7 @@ protected:
     QPoint m_lastMousePos;
     bool m_rotating = false;
     QVector2D m_rotationAngles = QVector2D(0, 0);
-    float m_zoom = -4;
+    float m_zoom = -2.5;
 
     QElapsedTimer m_timer;
     qint64 m_lastElapsedMillis;
@@ -81,13 +81,17 @@ public:
 private:
     // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
-    // std::unique_ptr<QRhiBuffer> m_vbuf;
     std::unique_ptr<QRhiBuffer> m_ubuf;
-    // std::unique_ptr<QRhiTexture> m_texture;
     std::unique_ptr<QRhiSampler> m_sampler;
     std::unique_ptr<QRhiGraphicsPipeline> m_colorPipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_fullscreenQuadSrb;
+
     std::unique_ptr<QRhiGraphicsPipeline> m_fullscreenQuadPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_fullscreenQuadSrb;
+
+    std::unique_ptr<QRhiGraphicsPipeline> m_rayPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_raySrb;
+    std::unique_ptr<QRhiBuffer> m_rayVertexBuffer;
+    std::unique_ptr<QRhiBuffer> m_rayUniformBuffer;
 
     std::vector<Entity> m_entities;
 

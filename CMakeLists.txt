@@ -49,6 +49,12 @@ set_source_files_properties("shaders/quad.vert.qsb"
 set_source_files_properties("shaders/quad.frag.qsb"
         PROPERTIES QT_RESOURCE_ALIAS "quad.frag.qsb"
 )
+set_source_files_properties("shaders/ray.vert.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "ray.vert.qsb"
+)
+set_source_files_properties("shaders/ray.frag.qsb"
+        PROPERTIES QT_RESOURCE_ALIAS "ray.frag.qsb"
+)
 set_source_files_properties("resources/bunny.obj"
         PROPERTIES QT_RESOURCE_ALIAS "bunny.obj"
 )
@@ -71,6 +77,8 @@ qt_add_shaders(rhiwindow "rhiwindow_shaders"
         "shaders/color.frag"
         "shaders/quad.vert"
         "shaders/quad.frag"
+        "shaders/ray.vert"
+        "shaders/ray.frag"
 )
 
 install(TARGETS rhiwindow

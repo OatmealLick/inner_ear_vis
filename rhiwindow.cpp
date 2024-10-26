@@ -186,7 +186,11 @@ void RhiWindow::resizeSwapChain() {
     const QSize outputSize = m_sc->currentPixelSize();
     m_viewProjection = m_rhi->clipSpaceCorrMatrix();
     m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-    m_viewProjection.translate(0, 0, 0);
+    m_viewProjection.lookAt(
+        QVector3D(0, 0, m_zoom),
+        QVector3D(0, 0, 0),
+        QVector3D(0, 1, 0)
+    );
 }
 
 //! [swapchain-resize]
@@ -317,8 +321,7 @@ void HelloWindow::customInit() {
         exit(1);
     }
 
-    std::unordered_map<unsigned int, QRhiTexture*> materialIndexToTexture;
-    // std::vector<QRhiTexture *> textures;
+    std::unordered_map<unsigned int, QRhiTexture *> materialIndexToTexture;
 
     for (unsigned int i = 0; i < scene->mNumMaterials; i++) {
         const aiMaterial *material = scene->mMaterials[i];
@@ -365,27 +368,23 @@ void HelloWindow::customInit() {
         const auto rgbaData = new uchar[width * height * 4];
 
         for (int x = 0; x < width * height; ++x) {
-            rgbaData[4 * x + 0] = data[3 * x + 0];  // R
-            rgbaData[4 * x + 1] = data[3 * x + 1];  // G
-            rgbaData[4 * x + 2] = data[3 * x + 2];  // B
-            rgbaData[4 * x + 3] = 255;              // A (fully opaque)
+            rgbaData[4 * x + 0] = data[3 * x + 0]; // R
+            rgbaData[4 * x + 1] = data[3 * x + 1]; // G
+            rgbaData[4 * x + 2] = data[3 * x + 2]; // B
+            rgbaData[4 * x + 3] = 255; // A (fully opaque)
         }
 
         QImage image(rgbaData, width, height, QImage::Format_RGBA8888);
         // image.setDevicePixelRatio(devicePixelRatio());
         // image.data_ptr() = data;
-        // m_initialUpdates->uploadTexture(texture, image);
-
-        // textures.push_back(texture);
+        m_initialUpdates->uploadTexture(texture, image);
         materialIndexToTexture[i] = texture;
+        stbi_image_free(data);
+
         // todo
-        // stbi_image_free(data);
+        // delete[] rgbaData;
     }
 
-    constexpr auto positionSize = 3;
-    constexpr auto normalSize = 3;
-    constexpr auto textureCoords = 2;
-    constexpr auto stride = positionSize + normalSize + textureCoords;
 
     m_sampler.reset(m_rhi->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
                                       QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
@@ -395,6 +394,10 @@ void HelloWindow::customInit() {
     m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
     m_ubuf->create();
 
+    m_rayUniformBuffer.reset(
+        m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64));
+    m_rayUniformBuffer->create();
+
     m_entities.reserve(10);
     for (int j = 0; j < scene->mNumMeshes; ++j) {
         const auto mesh = scene->mMeshes[j];
@@ -403,8 +406,8 @@ void HelloWindow::customInit() {
         assert(mesh->HasNormals());
         assert(mesh->HasTextureCoords(0));
 
-        m_entities.emplace_back(*mesh, nullptr, nullptr, *m_rhi, m_initialUpdates, m_ubuf.get());
-        // m_entities.emplace_back(*mesh, materialIndexToTexture[mesh->mMaterialIndex], m_sampler.get(), *m_rhi, m_initialUpdates, m_ubuf.get());
+        m_entities.emplace_back(*mesh, materialIndexToTexture[mesh->mMaterialIndex], m_sampler.get(), *m_rhi,
+                                m_initialUpdates, m_ubuf.get());
     }
 
     //! [render-init-1]
@@ -423,6 +426,10 @@ void HelloWindow::customInit() {
         {QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/color.frag.qsb"))}
     });
     QRhiVertexInputLayout inputLayout;
+    constexpr auto positionSize = 3;
+    constexpr auto normalSize = 3;
+    constexpr auto textureCoords = 2;
+    constexpr auto stride = positionSize + normalSize + textureCoords;
     inputLayout.setBindings({
         {stride * sizeof(float)}
     });
@@ -432,11 +439,55 @@ void HelloWindow::customInit() {
         {0, 2, QRhiVertexInputAttribute::Float2, 6 * sizeof(float)},
     });
     m_colorPipeline->setVertexInputLayout(inputLayout);
-    // in theory we can swap this at runtime
-    // m_colorPipeline->setShaderResourceBindings(m_colorTriSrb.get());
     m_colorPipeline->setRenderPassDescriptor(m_rp.get());
     m_colorPipeline->create();
     //! [render-init-2]
+
+    // m_vbuf.reset(m_rhi.newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
+    //                               mesh.mNumVertices * stride * sizeof(float)));
+    // m_vbuf->create();
+    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
+    float rayInitialData[] = {
+        0.0f, 0.0f, 0.0f,
+        1.0f, 1.0f, -1.0f
+    };
+    m_rayVertexBuffer.reset(m_rhi->newBuffer(
+        QRhiBuffer::Dynamic,
+        QRhiBuffer::VertexBuffer,
+        2 * 3 * sizeof(float))
+    );
+    m_rayVertexBuffer->create();
+    m_initialUpdates->updateDynamicBuffer(m_rayVertexBuffer.get(), 0, 2 * 3 * sizeof(float), rayInitialData);
+
+    m_rayPipeline.reset(m_rhi->newGraphicsPipeline());
+    m_rayPipeline->setDepthTest(true);
+    m_rayPipeline->setDepthWrite(true);
+    m_rayPipeline->setTargetBlends({premulAlphaBlend});
+    m_rayPipeline->setShaderStages({
+        {QRhiShaderStage::Vertex, getShader(QLatin1String(":/shaders/ray.vert.qsb"))},
+        {QRhiShaderStage::Fragment, getShader(QLatin1String(":/shaders/ray.frag.qsb"))}
+    });
+    QRhiVertexInputLayout rayInputLayout;
+    rayInputLayout.setBindings({
+        {3 * sizeof(float)}
+    });
+    rayInputLayout.setAttributes({
+        {0, 0, QRhiVertexInputAttribute::Float3, 0},
+    });
+    m_rayPipeline->setVertexInputLayout(rayInputLayout);
+    m_rayPipeline->setRenderPassDescriptor(m_rp.get());
+    m_rayPipeline->setTopology(QRhiGraphicsPipeline::LineStrip);
+    m_raySrb.reset(m_rhi->newShaderResourceBindings());
+    static constexpr QRhiShaderResourceBinding::StageFlags visibility =
+            QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
+
+    m_raySrb->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(0, visibility, m_rayUniformBuffer.get()),
+    });
+    m_raySrb->create();
+    m_rayPipeline->setShaderResourceBindings(m_raySrb.get());
+    m_rayPipeline->create();
+
 
     // m_fullscreenQuadSrb.reset(m_rhi->newShaderResourceBindings());
     // m_fullscreenQuadSrb->setBindings({
@@ -474,15 +525,13 @@ void HelloWindow::customRender() {
     //! [render-rotation]
     QMatrix4x4 modelViewProjection = m_viewProjection;
 
-    constexpr auto yOffset = -0.1f;
-    modelViewProjection.translate(0, yOffset, m_zoom);
-    modelViewProjection.rotate(m_rotationAngles.y(), 1, 0, 0);
+    resourceUpdates->updateDynamicBuffer(m_rayUniformBuffer.get(), 0, 64, m_viewProjection.constData());
+
+    modelViewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
     modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
-
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
-    //! [render-rotation]
-
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 64, 4, &m_opacity);
+    //! [render-rotation]
 
     //! [render-cb]
     QRhiCommandBuffer *cb = m_sc->currentFrameCommandBuffer();
@@ -502,19 +551,23 @@ void HelloWindow::customRender() {
     // cb->draw(6);
 
     //! [render-pass-record]
-    for (const auto& entity : m_entities) {
+    for (const auto &entity: m_entities) {
         m_colorPipeline->setShaderResourceBindings(entity.m_colorTriSrb.get());
+        m_colorPipeline->create();
         cb->setGraphicsPipeline(m_colorPipeline.get());
         cb->setShaderResources();
-
-        // cb->setGraphicsPipeline(m_colorPipeline.get());
-        // cb->setShaderResources(entity.m_colorTriSrb.get());
 
         const QRhiCommandBuffer::VertexInput vbufBinding(entity.m_vbuf.get(), 0);
         cb->setVertexInput(0, 1, &vbufBinding);
         cb->draw(entity.GetNumVertices());
     }
     // cb->draw(6);
+
+    cb->setGraphicsPipeline(m_rayPipeline.get());
+    cb->setShaderResources();
+    const QRhiCommandBuffer::VertexInput rayVbufBinding(m_rayVertexBuffer.get(), 0);
+    cb->setVertexInput(0, 1, &rayVbufBinding);
+    cb->draw(2);
 
     cb->endPass();
     //! [render-pass-record]
@@ -536,8 +589,48 @@ void HelloWindow::handleMouseButtonPress(QMouseEvent *event) {
 
 void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
     m_rotating = false;
+
+    const auto screenPosition = event->position();
+    std::cout << "Screen pos in pixels: " << screenPosition.x() << ", " << screenPosition.y() << std::endl;
+    const float ndcX = (2.0f * screenPosition.x()) / width() - 1.0f;
+    const float ndcY = 1.0f - (2.0f * screenPosition.y()) / height();
+    std::cout << "NDC: " << ndcX << ", " << ndcY << std::endl;
+    std::cout << std::endl;
+
+    auto rayDir = QVector3D(ndcX, ndcY, -1.0f);
+    auto rayOrigin = QVector3D(0.0f, 0.0f, 0.0f);
+
+    const QSize outputSize = m_sc->currentPixelSize();
+    auto projectionViewMatrix = m_rhi->clipSpaceCorrMatrix();
+    projectionViewMatrix.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+    projectionViewMatrix.lookAt(
+        QVector3D(0, 0, m_zoom),
+        QVector3D(0, 0, 0),
+        QVector3D(0, 1, 0)
+    );
+
+    auto invertedProjectionViewMatrix = projectionViewMatrix.inverted();
+
+    // glm::vec4 rayDirWorld = invViewMatrix * glm::vec4(rayDir, 0.0f); // Keep it as direction vector
+    // glm::vec3 rayOriginWorld = glm::vec3(invViewMatrix * glm::vec4(rayOrigin, 1.0f)); // Translation affected
+    // rayDirWorld = glm::normalize(glm::vec3(rayDirWorld));
+
+    auto rayDirWorld = invertedProjectionViewMatrix * QVector4D(rayDir, 0.0f);
+    auto rayOriginWorld = invertedProjectionViewMatrix * QVector4D(rayOrigin, 1.0f);
+    rayDirWorld.normalize();
+
+    std::cout << "Ray direction: " << rayDirWorld.x() << ", " << rayDirWorld.y() << std::endl;
+    std::cout << "Ray origin world: " << rayOriginWorld.x() << ", " << rayOriginWorld.y() << std::endl;
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
     m_zoom += event->angleDelta().y() * 0.005f;
+    const QSize outputSize = m_sc->currentPixelSize();
+    m_viewProjection = m_rhi->clipSpaceCorrMatrix();
+    m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+    m_viewProjection.lookAt(
+        QVector3D(0, 0, m_zoom),
+        QVector3D(0, 0, 0),
+        QVector3D(0, 1, 0)
+    );
 }
