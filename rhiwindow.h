@@ -45,7 +45,7 @@ protected:
     QPoint m_lastMousePos;
     bool m_rotating = false;
     QVector2D m_rotationAngles = QVector2D(0, 0);
-    float m_zoom = -2.5;
+    float m_zoom = 2.5;
 
     QElapsedTimer m_timer;
     qint64 m_lastElapsedMillis;
@@ -92,6 +92,7 @@ private:
     std::unique_ptr<QRhiShaderResourceBindings> m_raySrb;
     std::unique_ptr<QRhiBuffer> m_rayVertexBuffer;
     std::unique_ptr<QRhiBuffer> m_rayUniformBuffer;
+    float* pendingUpdates = nullptr;
 
     std::vector<Entity> m_entities;
 

@@ -191,6 +191,8 @@ void RhiWindow::resizeSwapChain() {
         QVector3D(0, 0, 0),
         QVector3D(0, 1, 0)
     );
+    m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
+    m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
 }
 
 //! [swapchain-resize]
@@ -449,7 +451,7 @@ void HelloWindow::customInit() {
     // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
     float rayInitialData[] = {
         0.0f, 0.0f, 0.0f,
-        1.0f, 1.0f, -1.0f
+        1.0f, 1.0f, -1.0f,
     };
     m_rayVertexBuffer.reset(m_rhi->newBuffer(
         QRhiBuffer::Dynamic,
@@ -525,10 +527,14 @@ void HelloWindow::customRender() {
     //! [render-rotation]
     QMatrix4x4 modelViewProjection = m_viewProjection;
 
+    if (pendingUpdates != nullptr) {
+        resourceUpdates->updateDynamicBuffer(m_rayVertexBuffer.get(), 0, 2 * 3 * sizeof(float), pendingUpdates);
+        pendingUpdates = nullptr;
+    }
     resourceUpdates->updateDynamicBuffer(m_rayUniformBuffer.get(), 0, 64, m_viewProjection.constData());
 
-    modelViewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-    modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+    // modelViewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
+    // modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
     resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 64, 4, &m_opacity);
     //! [render-rotation]
@@ -578,6 +584,16 @@ void HelloWindow::handleMouseMove(QMouseEvent *event) {
         const auto mousePos = event->pos();
         const auto offset = mousePos - m_lastMousePos;
         m_rotationAngles += QVector2D(offset) * m_deltaTime * 20;
+        const QSize outputSize = m_sc->currentPixelSize();
+        m_viewProjection = m_rhi->clipSpaceCorrMatrix();
+        m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+        m_viewProjection.lookAt(
+            QVector3D(0, 0, m_zoom),
+            QVector3D(0, 0, 0),
+            QVector3D(0, 1, 0)
+        );
+        m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
+        m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
     }
 
     m_lastMousePos = event->pos();
@@ -590,6 +606,10 @@ void HelloWindow::handleMouseButtonPress(QMouseEvent *event) {
 void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
     m_rotating = false;
 
+    if (event->button() == Qt::LeftButton) {
+        return;
+    }
+
     const auto screenPosition = event->position();
     std::cout << "Screen pos in pixels: " << screenPosition.x() << ", " << screenPosition.y() << std::endl;
     const float ndcX = (2.0f * screenPosition.x()) / width() - 1.0f;
@@ -597,34 +617,30 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
     std::cout << "NDC: " << ndcX << ", " << ndcY << std::endl;
     std::cout << std::endl;
 
-    auto rayDir = QVector3D(ndcX, ndcY, -1.0f);
-    auto rayOrigin = QVector3D(0.0f, 0.0f, 0.0f);
+    QVector4D nearPoint(ndcX, ndcY, -1.0f, 1.0f);
+    QVector4D farPoint(ndcX, ndcY, 1.0f, 1.0f);
 
-    const QSize outputSize = m_sc->currentPixelSize();
-    auto projectionViewMatrix = m_rhi->clipSpaceCorrMatrix();
-    projectionViewMatrix.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-    projectionViewMatrix.lookAt(
-        QVector3D(0, 0, m_zoom),
-        QVector3D(0, 0, 0),
-        QVector3D(0, 1, 0)
-    );
+    QMatrix4x4 inverseVP = m_viewProjection.inverted();
 
-    auto invertedProjectionViewMatrix = projectionViewMatrix.inverted();
+    QVector4D nearWorld = inverseVP * nearPoint;
+    QVector4D farWorld = inverseVP * farPoint;
 
-    // glm::vec4 rayDirWorld = invViewMatrix * glm::vec4(rayDir, 0.0f); // Keep it as direction vector
-    // glm::vec3 rayOriginWorld = glm::vec3(invViewMatrix * glm::vec4(rayOrigin, 1.0f)); // Translation affected
-    // rayDirWorld = glm::normalize(glm::vec3(rayDirWorld));
+    nearWorld /= nearWorld.w();
+    farWorld /= farWorld.w();
 
-    auto rayDirWorld = invertedProjectionViewMatrix * QVector4D(rayDir, 0.0f);
-    auto rayOriginWorld = invertedProjectionViewMatrix * QVector4D(rayOrigin, 1.0f);
-    rayDirWorld.normalize();
+    QVector3D rayOrigin(nearWorld.x(), nearWorld.y(), nearWorld.z());
+    QVector3D rayEnd(farWorld.x(), farWorld.y(), farWorld.z());
+    QVector3D rayDirection = (rayEnd - rayOrigin).normalized();
 
-    std::cout << "Ray direction: " << rayDirWorld.x() << ", " << rayDirWorld.y() << std::endl;
-    std::cout << "Ray origin world: " << rayOriginWorld.x() << ", " << rayOriginWorld.y() << std::endl;
+    pendingUpdates = new float[] {
+        rayOrigin.x(), rayOrigin.y(), rayOrigin.z(),
+        rayEnd.x(), rayEnd.y(), rayEnd.z()
+    };
+
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
-    m_zoom += event->angleDelta().y() * 0.005f;
+    m_zoom -= event->angleDelta().y() * 0.005f;
     const QSize outputSize = m_sc->currentPixelSize();
     m_viewProjection = m_rhi->clipSpaceCorrMatrix();
     m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
@@ -633,4 +649,6 @@ void HelloWindow::handleWheel(QWheelEvent *event) {
         QVector3D(0, 0, 0),
         QVector3D(0, 1, 0)
     );
+    m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
+    m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
 }
