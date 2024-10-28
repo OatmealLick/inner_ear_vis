@@ -10,7 +10,7 @@ layout(location = 2) out vec2 v_tex_coords;
 
 layout(std140, binding = 0) uniform buf {
     mat4 mvp;
-    float opacity;
+    int rendering_mode;
 };
 
 void main()

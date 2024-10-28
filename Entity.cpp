@@ -8,7 +8,7 @@
 
 #include "assimp/material.h"
 
-Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, QRhi& m_rhi, QRhiResourceUpdateBatch *m_initialUpdates, QRhiBuffer* ubuf) {
+Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, QRhi& rhi, QRhiResourceUpdateBatch *initialUpdates, QRhiBuffer* ubuf, QRhiBuffer* greyedOutUbuf) {
 
     constexpr auto positionSize = 3;
     constexpr auto normalSize = 3;
@@ -19,22 +19,21 @@ Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, Q
 
     auto *vertexData = new float[mesh.mNumVertices * stride];
 
-    auto max = std::numeric_limits<float>::min();
-    auto min = std::numeric_limits<float>::max();
-
-    for (int i = 0; i < mesh.mNumVertices; i++) {
-        max = std::max(max, mesh.mVertices[i].x);
-        min = std::min(min, mesh.mVertices[i].x);
-    }
+    m_vertices.reserve(m_numVertices);
 
     for (int i = 0; i < mesh.mNumVertices; ++i) {
         const auto v = mesh.mVertices[i];
         const auto n = mesh.mNormals[i];
         const auto t = mesh.mTextureCoords[0][i];
 
-        vertexData[stride * i] = v.x / 1000.0f;
-        vertexData[stride * i + 1] = v.y / 1000.0f;
-        vertexData[stride * i + 2] = v.z / 1000.0f;
+        // poor man scaling :)
+        float x = v.x / 1000.0f;
+        float y = v.y / 1000.0f;
+        float z = v.z / 1000.0f;
+
+        vertexData[stride * i] = x;
+        vertexData[stride * i + 1] = y;
+        vertexData[stride * i + 2] = z;
 
         vertexData[stride * i + 3] = n.x;
         vertexData[stride * i + 4] = n.y;
@@ -42,23 +41,38 @@ Entity::Entity(const aiMesh &mesh, QRhiTexture* texture, QRhiSampler* sampler, Q
 
         vertexData[stride * i + 6] = t.x;
         vertexData[stride * i + 7] = 1.0f - t.y;  // flipping the y coordinate for pipeline to handle properly
+
+        // also copy vertex positions for later use, eg. raycasting
+        m_vertices.emplace_back(x, y, z);
+
+        // computing centroid for zooming on selection
+        m_centroid += QVector3D(x, y, z);
     }
 
-    m_vbuf.reset(m_rhi.newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
+    m_vbuf.reset(rhi.newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
                                   mesh.mNumVertices * stride * sizeof(float)));
     m_vbuf->create();
-    m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
+    initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
 
-    m_colorTriSrb.reset(m_rhi.newShaderResourceBindings());
     static constexpr QRhiShaderResourceBinding::StageFlags visibility =
             QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
 
-    m_colorTriSrb->setBindings({
+    m_defaultSrb.reset(rhi.newShaderResourceBindings());
+    m_defaultSrb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(0, visibility, ubuf),
         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
                                                   texture, sampler)
     });
-    m_colorTriSrb->create();
+    m_defaultSrb->create();
+    m_greyedOutSrb.reset(rhi.newShaderResourceBindings());
+    m_greyedOutSrb->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(0, visibility, greyedOutUbuf),
+        QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage,
+                                                  texture, sampler)
+    });
+    m_greyedOutSrb->create();
+
+    m_centroid /= static_cast<float>(mesh.mNumVertices);
 }
 
 unsigned int Entity::GetNumVertices() const {

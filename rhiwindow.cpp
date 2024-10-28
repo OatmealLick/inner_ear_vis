@@ -14,6 +14,7 @@
 #include "assimp/scene.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+#include "optional"
 
 //! [rhiwindow-ctor]
 RhiWindow::RhiWindow(QRhi::Implementation graphicsApi)
@@ -393,8 +394,10 @@ void HelloWindow::customInit() {
     m_sampler->create();
 
     static const quint32 UBUF_SIZE = 68;
-    m_ubuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
-    m_ubuf->create();
+    m_opaqueUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
+    m_opaqueUbuf->create();
+    m_greyedOutUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
+    m_greyedOutUbuf->create();
 
     m_rayUniformBuffer.reset(
         m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64));
@@ -409,7 +412,7 @@ void HelloWindow::customInit() {
         assert(mesh->HasTextureCoords(0));
 
         m_entities.emplace_back(*mesh, materialIndexToTexture[mesh->mMaterialIndex], m_sampler.get(), *m_rhi,
-                                m_initialUpdates, m_ubuf.get());
+                                m_initialUpdates, m_opaqueUbuf.get(), m_greyedOutUbuf.get());
     }
 
     //! [render-init-1]
@@ -443,20 +446,15 @@ void HelloWindow::customInit() {
     m_colorPipeline->setVertexInputLayout(inputLayout);
     m_colorPipeline->setRenderPassDescriptor(m_rp.get());
     m_colorPipeline->create();
-    //! [render-init-2]
 
-    // m_vbuf.reset(m_rhi.newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
-    //                               mesh.mNumVertices * stride * sizeof(float)));
-    // m_vbuf->create();
-    // m_initialUpdates->uploadStaticBuffer(m_vbuf.get(), vertexData);
-    float rayInitialData[] = {
+    constexpr float rayInitialData[] = {
         0.0f, 0.0f, 0.0f,
         1.0f, 1.0f, -1.0f,
     };
     m_rayVertexBuffer.reset(m_rhi->newBuffer(
-        QRhiBuffer::Dynamic,
-        QRhiBuffer::VertexBuffer,
-        2 * 3 * sizeof(float))
+            QRhiBuffer::Dynamic,
+            QRhiBuffer::VertexBuffer,
+            2 * 3 * sizeof(float))
     );
     m_rayVertexBuffer->create();
     m_initialUpdates->updateDynamicBuffer(m_rayVertexBuffer.get(), 0, 2 * 3 * sizeof(float), rayInitialData);
@@ -533,32 +531,33 @@ void HelloWindow::customRender() {
     }
     resourceUpdates->updateDynamicBuffer(m_rayUniformBuffer.get(), 0, 64, m_viewProjection.constData());
 
-    // modelViewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-    // modelViewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
-    resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
-    resourceUpdates->updateDynamicBuffer(m_ubuf.get(), 64, 4, &m_opacity);
-    //! [render-rotation]
+    auto normalRenderingMode = RenderingMode::Normal;
+    auto greyedOutRenderingMode = RenderingMode::GreyedOut;
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, modelViewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 64, 4, &normalRenderingMode);
 
-    //! [render-cb]
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, modelViewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 64, 4, &greyedOutRenderingMode);
+
     QRhiCommandBuffer *cb = m_sc->currentFrameCommandBuffer();
     const QSize outputSizeInPixels = m_sc->currentPixelSize();
-    //! [render-cb]
 
     // (re)create the texture with a size matching the output surface size, when necessary.
     // ensureFullscreenTexture(outputSizeInPixels, resourceUpdates);
 
-    //! [render-pass]
     cb->beginPass(m_sc->currentFrameRenderTarget(), Qt::black, {1.0f, 0}, resourceUpdates);
-    //! [render-pass]
 
     // cb->setGraphicsPipeline(m_fullscreenQuadPipeline.get());
     cb->setViewport({0, 0, float(outputSizeInPixels.width()), float(outputSizeInPixels.height())});
     // cb->setShaderResources();
     // cb->draw(6);
 
-    //! [render-pass-record]
     for (const auto &entity: m_entities) {
-        m_colorPipeline->setShaderResourceBindings(entity.m_colorTriSrb.get());
+        if (entity.m_renderingMode == RenderingMode::GreyedOut) {
+            m_colorPipeline->setShaderResourceBindings(entity.m_greyedOutSrb.get());
+        } else {
+            m_colorPipeline->setShaderResourceBindings(entity.m_defaultSrb.get());
+        }
         m_colorPipeline->create();
         cb->setGraphicsPipeline(m_colorPipeline.get());
         cb->setShaderResources();
@@ -567,7 +566,6 @@ void HelloWindow::customRender() {
         cb->setVertexInput(0, 1, &vbufBinding);
         cb->draw(entity.GetNumVertices());
     }
-    // cb->draw(6);
 
     cb->setGraphicsPipeline(m_rayPipeline.get());
     cb->setShaderResources();
@@ -617,10 +615,9 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
     std::cout << "NDC: " << ndcX << ", " << ndcY << std::endl;
     std::cout << std::endl;
 
-    QVector4D nearPoint(ndcX, ndcY, -1.0f, 1.0f);
-    QVector4D farPoint(ndcX, ndcY, 1.0f, 1.0f);
-
-    QMatrix4x4 inverseVP = m_viewProjection.inverted();
+    const QVector4D nearPoint(ndcX, ndcY, -1.0f, 1.0f);
+    const QVector4D farPoint(ndcX, ndcY, 1.0f, 1.0f);
+    const QMatrix4x4 inverseVP = m_viewProjection.inverted();
 
     QVector4D nearWorld = inverseVP * nearPoint;
     QVector4D farWorld = inverseVP * farPoint;
@@ -628,15 +625,63 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
     nearWorld /= nearWorld.w();
     farWorld /= farWorld.w();
 
-    QVector3D rayOrigin(nearWorld.x(), nearWorld.y(), nearWorld.z());
-    QVector3D rayEnd(farWorld.x(), farWorld.y(), farWorld.z());
-    QVector3D rayDirection = (rayEnd - rayOrigin).normalized();
+    const QVector3D rayOrigin(nearWorld);
+    const QVector3D rayEnd(farWorld);
+    const QVector3D rayDir = (rayEnd - rayOrigin).normalized();
 
-    pendingUpdates = new float[] {
+    pendingUpdates = new float[]{
         rayOrigin.x(), rayOrigin.y(), rayOrigin.z(),
         rayEnd.x(), rayEnd.y(), rayEnd.z()
     };
 
+    // collide with entities
+    int closestEntity = -1;
+    float closestDistance = std::numeric_limits<float>::max();
+    for (int entityIndex = 0; entityIndex < m_entities.size(); ++entityIndex) {
+        const auto &entity = m_entities[entityIndex];
+        assert(entity.m_vertices.size() % 3 == 0);
+        for (int i = 0; i < entity.m_vertices.size() / 3; ++i) {
+            const auto v0 = QVector3D(QVector4D(entity.m_vertices[3 * i], 1.0f));
+            const auto v1 = QVector3D(QVector4D(entity.m_vertices[3 * i + 1], 1.0f));
+            const auto v2 = QVector3D(QVector4D(entity.m_vertices[3 * i + 2], 1.0f));
+
+            const auto result = doesRayIntersectTriangle(rayOrigin, rayDir, v0, v1, v2);
+            if (result.has_value()) {
+                if (result.value() < closestDistance) {
+                    closestDistance = result.value();
+                    closestEntity = entityIndex;
+                    std::cout << "Closest entity index: " << closestEntity << " with value: " << closestDistance <<
+                            std::endl;
+                }
+            }
+        }
+    }
+    if (closestEntity != -1) {
+        for (int i = 0; i < m_entities.size(); ++i) {
+            if (i == closestEntity) {
+                m_selectedEntity = closestEntity;
+                m_entities[i].m_renderingMode = RenderingMode::Normal;
+            } else {
+                m_entities[i].m_renderingMode = RenderingMode::GreyedOut;
+            }
+        }
+        m_zoom = 1.0f;
+
+        const auto newEye = m_entities[m_selectedEntity].m_centroid + QVector3D(0, 0, m_zoom);
+        const QSize outputSize = m_sc->currentPixelSize();
+        m_viewProjection = m_rhi->clipSpaceCorrMatrix();
+        m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+        m_viewProjection.lookAt(
+            newEye,
+            m_entities[m_selectedEntity].m_centroid,
+            QVector3D(0, 1, 0)
+        );
+        m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
+        m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+
+    } else {
+        m_selectedEntity = -1;
+    }
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
@@ -651,4 +696,49 @@ void HelloWindow::handleWheel(QWheelEvent *event) {
     );
     m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
     m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+}
+
+void HelloWindow::lookAt(const QVector3D eye,
+                         const QVector3D center,
+                         const QVector3D up) {
+    m_eye = eye;
+    m_center = center;
+    m_up = up;
+}
+
+std::optional<float> HelloWindow::doesRayIntersectTriangle(const QVector3D rayOriginWorld,
+                                                           const QVector3D rayDirWorld,
+                                                           const QVector3D v0,
+                                                           const QVector3D v1,
+                                                           const QVector3D v2) {
+    constexpr float EPSILON = 1e-6;
+
+    const QVector3D edge1 = v1 - v0;
+    const QVector3D edge2 = v2 - v0;
+    const QVector3D h = QVector3D::crossProduct(rayDirWorld, edge2);
+    const float a = QVector3D::dotProduct(edge1, h);
+
+    if (fabs(a) < EPSILON) {
+        return std::nullopt;
+    }
+
+    const float f = 1.0 / a;
+    const QVector3D s = rayOriginWorld - v0;
+    const float u = f * QVector3D::dotProduct(s, h);
+    if (u < 0.0 || u > 1.0) {
+        return std::nullopt;
+    }
+
+    const QVector3D q = QVector3D::crossProduct(s, edge1);
+    const float v = f * QVector3D::dotProduct(rayDirWorld, q);
+    if (v < 0.0 || u + v > 1.0) {
+        return std::nullopt;
+    }
+
+    const float t = f * QVector3D::dotProduct(edge2, q);
+    if (t > EPSILON) {
+        return t;
+    }
+
+    return std::nullopt;
 }

@@ -78,10 +78,15 @@ public:
     void handleMouseButtonRelease(QMouseEvent *event) override;
     void handleWheel(QWheelEvent *event) override;
 
+    void lookAt(QVector3D eye, QVector3D center, QVector3D up);
 private:
     // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
-    std::unique_ptr<QRhiBuffer> m_ubuf;
+    // returns the distance from the ray origin if intersects
+    static std::optional<float> doesRayIntersectTriangle(QVector3D rayOriginWorld,  QVector3D rayDirWorld,  QVector3D v0,  QVector3D v1,  QVector3D v2);
+
+    std::unique_ptr<QRhiBuffer> m_opaqueUbuf;
+    std::unique_ptr<QRhiBuffer> m_greyedOutUbuf;
     std::unique_ptr<QRhiSampler> m_sampler;
     std::unique_ptr<QRhiGraphicsPipeline> m_colorPipeline;
 
@@ -95,12 +100,17 @@ private:
     float* pendingUpdates = nullptr;
 
     std::vector<Entity> m_entities;
+    int m_selectedEntity = -1;
 
     QRhiResourceUpdateBatch *m_initialUpdates = nullptr;
 
     float m_rotation = 0;
-    float m_opacity = 1;
+    float m_opacity = 1.0f;
     int m_opacityDir = -1;
+
+    QVector3D m_eye;
+    QVector3D m_center;
+    QVector3D m_up;
 };
 
 #endif
