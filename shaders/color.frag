@@ -7,7 +7,8 @@ layout(location = 2) in vec2 v_tex_coords;
 layout(location = 0) out vec4 fragColor;
 
 layout(std140, binding = 0) uniform buf {
-    mat4 mvp;
+    mat4 model_rotation;
+    mat4 view_projection;
     int rendering_mode;
 };
 

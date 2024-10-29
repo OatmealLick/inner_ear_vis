@@ -402,7 +402,7 @@ void HelloWindow::customInit() {
                                       QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge));
     m_sampler->create();
 
-    static const quint32 UBUF_SIZE = 68;
+    static const quint32 UBUF_SIZE = 64 + 64 + 4;
     m_opaqueUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
     m_opaqueUbuf->create();
     m_greyedOutUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
@@ -530,7 +530,8 @@ void HelloWindow::customRender() {
         m_initialUpdates = nullptr;
     }
 
-    m_viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view * m_modelRotation;
+    auto viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view;
+    m_viewProjection = viewProjection * m_modelRotation;
 
     if (pendingUpdates != nullptr) {
         resourceUpdates->updateDynamicBuffer(m_rayVertexBuffer.get(), 0, 2 * 3 * sizeof(float), pendingUpdates);
@@ -540,11 +541,13 @@ void HelloWindow::customRender() {
 
     auto normalRenderingMode = RenderingMode::Normal;
     auto greyedOutRenderingMode = RenderingMode::GreyedOut;
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, m_viewProjection.constData());
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 64, 4, &normalRenderingMode);
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, m_modelRotation.constData());
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 64, 64, viewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 128, 4, &normalRenderingMode);
 
-    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, m_viewProjection.constData());
-    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 64, 4, &greyedOutRenderingMode);
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, m_modelRotation.constData());
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 64, 64, viewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 128, 4, &greyedOutRenderingMode);
 
     QRhiCommandBuffer *cb = m_sc->currentFrameCommandBuffer();
     const QSize outputSizeInPixels = m_sc->currentPixelSize();
