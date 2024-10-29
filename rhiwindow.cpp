@@ -180,23 +180,14 @@ void RhiWindow::init() {
     customInit();
 }
 
-//! [swapchain-resize]
 void RhiWindow::resizeSwapChain() {
     m_hasSwapChain = m_sc->createOrResize(); // also handles m_ds
 
     const QSize outputSize = m_sc->currentPixelSize();
-    m_viewProjection = m_rhi->clipSpaceCorrMatrix();
-    m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-    m_viewProjection.lookAt(
-        QVector3D(0, 0, m_zoom),
-        QVector3D(0, 0, 0),
-        QVector3D(0, 1, 0)
-    );
-    m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-    m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+    QMatrix4x4 projection;
+    projection.perspective(45.0f, static_cast<float>(outputSize.width()) / outputSize.height(), 0.1f, 1000.0f);
+    m_projection = projection;
 }
-
-//! [swapchain-resize]
 
 void RhiWindow::releaseSwapChain() {
     if (m_hasSwapChain) {
@@ -310,6 +301,24 @@ HelloWindow::HelloWindow(QRhi::Implementation graphicsApi)
 //! [render-init-1]
 void HelloWindow::customInit() {
     m_timer.start();
+
+    const QSize outputSize = m_sc->currentPixelSize();
+    auto projection = QMatrix4x4();
+    projection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+    m_projection = projection;
+
+    auto view = QMatrix4x4();
+    view.lookAt(
+        QVector3D(0, 0, m_zoom),
+        QVector3D(0, 0, 0),
+        QVector3D(0, 1, 0)
+    );
+    m_view = view;
+
+    auto modelRotation = QMatrix4x4();
+    modelRotation.rotate(m_rotationAngles.y(), -1, 0, 0);
+    modelRotation.rotate(m_rotationAngles.x(), 0, 1, 0);
+    m_modelRotation = modelRotation;
 
     m_initialUpdates = m_rhi->nextResourceUpdateBatch();
 
@@ -520,10 +529,8 @@ void HelloWindow::customRender() {
         m_initialUpdates->release();
         m_initialUpdates = nullptr;
     }
-    //! [render-1]
 
-    //! [render-rotation]
-    QMatrix4x4 modelViewProjection = m_viewProjection;
+    m_viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view * m_modelRotation;
 
     if (pendingUpdates != nullptr) {
         resourceUpdates->updateDynamicBuffer(m_rayVertexBuffer.get(), 0, 2 * 3 * sizeof(float), pendingUpdates);
@@ -533,10 +540,10 @@ void HelloWindow::customRender() {
 
     auto normalRenderingMode = RenderingMode::Normal;
     auto greyedOutRenderingMode = RenderingMode::GreyedOut;
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, modelViewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, m_viewProjection.constData());
     resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 64, 4, &normalRenderingMode);
 
-    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, modelViewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, m_viewProjection.constData());
     resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 64, 4, &greyedOutRenderingMode);
 
     QRhiCommandBuffer *cb = m_sc->currentFrameCommandBuffer();
@@ -578,132 +585,136 @@ void HelloWindow::customRender() {
 }
 
 void HelloWindow::handleMouseMove(QMouseEvent *event) {
-    if (m_rotating) {
+    if (m_pressing_down) {
+        m_rotating = true;
+
         const auto mousePos = event->pos();
         const auto offset = mousePos - m_lastMousePos;
         m_rotationAngles += QVector2D(offset) * m_deltaTime * 20;
-        const QSize outputSize = m_sc->currentPixelSize();
-        m_viewProjection = m_rhi->clipSpaceCorrMatrix();
-        m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-        m_viewProjection.lookAt(
-            QVector3D(0, 0, m_zoom),
-            QVector3D(0, 0, 0),
-            QVector3D(0, 1, 0)
-        );
-        m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-        m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
+
+        QMatrix4x4 modelRotation;
+        modelRotation.rotate(m_rotationAngles.y(), -1, 0, 0);
+        modelRotation.rotate(m_rotationAngles.x(), 0, 1, 0);
+        m_modelRotation = modelRotation;
     }
 
     m_lastMousePos = event->pos();
 }
 
 void HelloWindow::handleMouseButtonPress(QMouseEvent *event) {
-    m_rotating = true;
+    if (event->button() == Qt::LeftButton) {
+        m_pressing_down = true;
+    }
 }
 
 void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
-    m_rotating = false;
+    m_pressing_down = false;
 
     if (event->button() == Qt::LeftButton) {
-        return;
-    }
+        if (m_rotating) {
+            m_rotating = false;
+            return;
+        }
 
-    const auto screenPosition = event->position();
-    std::cout << "Screen pos in pixels: " << screenPosition.x() << ", " << screenPosition.y() << std::endl;
-    const float ndcX = (2.0f * screenPosition.x()) / width() - 1.0f;
-    const float ndcY = 1.0f - (2.0f * screenPosition.y()) / height();
-    std::cout << "NDC: " << ndcX << ", " << ndcY << std::endl;
-    std::cout << std::endl;
+        // treat as single click
+        const auto screenPosition = event->position();
+        std::cout << "Screen pos in pixels: " << screenPosition.x() << ", " << screenPosition.y() << std::endl;
+        const float ndcX = (2.0f * screenPosition.x()) / width() - 1.0f;
+        const float ndcY = 1.0f - (2.0f * screenPosition.y()) / height();
+        std::cout << "NDC: " << ndcX << ", " << ndcY << std::endl;
+        std::cout << std::endl;
 
-    const QVector4D nearPoint(ndcX, ndcY, -1.0f, 1.0f);
-    const QVector4D farPoint(ndcX, ndcY, 1.0f, 1.0f);
-    const QMatrix4x4 inverseVP = m_viewProjection.inverted();
+        const QVector4D nearPoint(ndcX, ndcY, -1.0f, 1.0f);
+        const QVector4D farPoint(ndcX, ndcY, 1.0f, 1.0f);
+        const QMatrix4x4 inverseVP = m_viewProjection.inverted();
 
-    QVector4D nearWorld = inverseVP * nearPoint;
-    QVector4D farWorld = inverseVP * farPoint;
+        QVector4D nearWorld = inverseVP * nearPoint;
+        QVector4D farWorld = inverseVP * farPoint;
 
-    nearWorld /= nearWorld.w();
-    farWorld /= farWorld.w();
+        nearWorld /= nearWorld.w();
+        farWorld /= farWorld.w();
 
-    const QVector3D rayOrigin(nearWorld);
-    const QVector3D rayEnd(farWorld);
-    const QVector3D rayDir = (rayEnd - rayOrigin).normalized();
+        const QVector3D rayOrigin(nearWorld);
+        const QVector3D rayEnd(farWorld);
+        const QVector3D rayDir = (rayEnd - rayOrigin).normalized();
 
-    pendingUpdates = new float[]{
-        rayOrigin.x(), rayOrigin.y(), rayOrigin.z(),
-        rayEnd.x(), rayEnd.y(), rayEnd.z()
-    };
+        pendingUpdates = new float[]{
+            rayOrigin.x(), rayOrigin.y(), rayOrigin.z(),
+            rayEnd.x(), rayEnd.y(), rayEnd.z()
+        };
 
-    // collide with entities
-    int closestEntity = -1;
-    float closestDistance = std::numeric_limits<float>::max();
-    for (int entityIndex = 0; entityIndex < m_entities.size(); ++entityIndex) {
-        const auto &entity = m_entities[entityIndex];
-        assert(entity.m_vertices.size() % 3 == 0);
-        for (int i = 0; i < entity.m_vertices.size() / 3; ++i) {
-            const auto v0 = QVector3D(QVector4D(entity.m_vertices[3 * i], 1.0f));
-            const auto v1 = QVector3D(QVector4D(entity.m_vertices[3 * i + 1], 1.0f));
-            const auto v2 = QVector3D(QVector4D(entity.m_vertices[3 * i + 2], 1.0f));
+        // collide with entities
+        int closestEntity = -1;
+        float closestDistance = std::numeric_limits<float>::max();
+        for (int entityIndex = 0; entityIndex < m_entities.size(); ++entityIndex) {
+            const auto &entity = m_entities[entityIndex];
+            assert(entity.m_vertices.size() % 3 == 0);
+            for (int i = 0; i < entity.m_vertices.size() / 3; ++i) {
+                const auto v0 = entity.m_vertices[3 * i];
+                const auto v1 = entity.m_vertices[3 * i + 1];
+                const auto v2 = entity.m_vertices[3 * i + 2];
 
-            const auto result = doesRayIntersectTriangle(rayOrigin, rayDir, v0, v1, v2);
-            if (result.has_value()) {
-                if (result.value() < closestDistance) {
-                    closestDistance = result.value();
-                    closestEntity = entityIndex;
-                    std::cout << "Closest entity index: " << closestEntity << " with value: " << closestDistance <<
-                            std::endl;
+                const auto result = doesRayIntersectTriangle(rayOrigin, rayDir, v0, v1, v2);
+                if (result.has_value()) {
+                    if (result.value() < closestDistance) {
+                        closestDistance = result.value();
+                        closestEntity = entityIndex;
+                        std::cout << "Closest entity index: " << closestEntity << " with value: " << closestDistance <<
+                                std::endl;
+                    }
                 }
             }
         }
-    }
-    if (closestEntity != -1) {
-        for (int i = 0; i < m_entities.size(); ++i) {
-            if (i == closestEntity) {
-                m_selectedEntity = closestEntity;
-                m_entities[i].m_renderingMode = RenderingMode::Normal;
-            } else {
-                m_entities[i].m_renderingMode = RenderingMode::GreyedOut;
+        if (closestEntity != -1) {
+            for (int i = 0; i < m_entities.size(); ++i) {
+                if (i == closestEntity) {
+                    m_selectedEntity = closestEntity;
+                    m_entities[i].m_renderingMode = RenderingMode::Normal;
+                } else {
+                    m_entities[i].m_renderingMode = RenderingMode::GreyedOut;
+                }
             }
+            m_zoom = 1.0f;
+
+            const QVector3D cameraDirView(0, 0, -m_zoom);
+            const auto centroidWorld = m_modelRotation.map(m_entities[m_selectedEntity].m_centroid);
+            const auto newEye = centroidWorld - cameraDirView;
+            QMatrix4x4 view;
+            view.lookAt(
+                newEye,
+                centroidWorld,
+                QVector3D(0, 1, 0)
+            );
+            m_view = view;
+        } else {
+            m_selectedEntity = -1;
         }
-        m_zoom = 1.0f;
-
-        const auto newEye = m_entities[m_selectedEntity].m_centroid + QVector3D(0, 0, m_zoom);
-        const QSize outputSize = m_sc->currentPixelSize();
-        m_viewProjection = m_rhi->clipSpaceCorrMatrix();
-        m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-        m_viewProjection.lookAt(
-            newEye,
-            m_entities[m_selectedEntity].m_centroid,
-            QVector3D(0, 1, 0)
-        );
-        m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-        m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
-
-    } else {
-        m_selectedEntity = -1;
+    } else if (event->button() == Qt::RightButton) {
+        if (m_selectedEntity != -1) {
+            for (auto & entity : m_entities) {
+                entity.m_renderingMode = RenderingMode::Normal;
+            }
+            m_zoom = 2.5f;
+            QMatrix4x4 view;
+            view.lookAt(
+                QVector3D(0, 0, m_zoom),
+                QVector3D(0, 0, 0),
+                QVector3D(0, 1, 0)
+            );
+            m_view = view;
+        }
     }
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
     m_zoom -= event->angleDelta().y() * 0.005f;
-    const QSize outputSize = m_sc->currentPixelSize();
-    m_viewProjection = m_rhi->clipSpaceCorrMatrix();
-    m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
-    m_viewProjection.lookAt(
+    QMatrix4x4 view;
+    view.lookAt(
         QVector3D(0, 0, m_zoom),
         QVector3D(0, 0, 0),
         QVector3D(0, 1, 0)
     );
-    m_viewProjection.rotate(m_rotationAngles.y(), -1, 0, 0);
-    m_viewProjection.rotate(m_rotationAngles.x(), 0, 1, 0);
-}
-
-void HelloWindow::lookAt(const QVector3D eye,
-                         const QVector3D center,
-                         const QVector3D up) {
-    m_eye = eye;
-    m_center = center;
-    m_up = up;
+    m_view = view;
 }
 
 std::optional<float> HelloWindow::doesRayIntersectTriangle(const QVector3D rayOriginWorld,

@@ -44,12 +44,17 @@ protected:
 
     QPoint m_lastMousePos;
     bool m_rotating = false;
+    bool m_pressing_down = false;
     QVector2D m_rotationAngles = QVector2D(0, 0);
     float m_zoom = 2.5;
 
     QElapsedTimer m_timer;
     qint64 m_lastElapsedMillis;
     float m_deltaTime = 0;
+
+    QMatrix4x4 m_view;
+    QMatrix4x4 m_projection;
+    QMatrix4x4 m_modelRotation;
 
 private:
     void init();
@@ -77,8 +82,6 @@ public:
     void handleMouseButtonPress(QMouseEvent *event) override;
     void handleMouseButtonRelease(QMouseEvent *event) override;
     void handleWheel(QWheelEvent *event) override;
-
-    void lookAt(QVector3D eye, QVector3D center, QVector3D up);
 private:
     // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
@@ -107,10 +110,6 @@ private:
     float m_rotation = 0;
     float m_opacity = 1.0f;
     int m_opacityDir = -1;
-
-    QVector3D m_eye;
-    QVector3D m_center;
-    QVector3D m_up;
 };
 
 #endif
