@@ -8,6 +8,7 @@
 #include <QOffscreenSurface>
 #include <rhi/qrhi.h>
 
+#include "Camera.h"
 #include "Entity.h"
 #include "assimp/texture.h"
 #include "vendor/easing/easing.h"
@@ -59,18 +60,15 @@ protected:
     bool m_rotating = false;
     bool m_pressing_down = false;
     QVector2D m_rotationAngles = QVector2D(0, 0);
-    float m_zoom = 2.5;
 
     QElapsedTimer m_timer;
     qint64 m_lastElapsedMillis;
     float m_deltaTime = 0;
 
-    QMatrix4x4 m_view;
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelRotation;
 
-    QVector3D m_eye;
-    QVector3D m_center;
+    Camera m_camera;
 
 private:
     void init();

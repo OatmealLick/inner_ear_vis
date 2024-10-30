@@ -27,6 +27,8 @@ qt_add_executable(rhiwindow
         vendor/easing/easing.cpp
         vendor/easing/easing.h
         util.h
+        Camera.cpp
+        Camera.h
 )
 
 set_target_properties(rhiwindow PROPERTIES

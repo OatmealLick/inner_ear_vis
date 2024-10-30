@@ -20,7 +20,8 @@
 
 //! [rhiwindow-ctor]
 RhiWindow::RhiWindow(QRhi::Implementation graphicsApi)
-    : m_graphicsApi(graphicsApi) {
+    : m_graphicsApi(graphicsApi), m_camera(Camera()) {
+    // todo meh
     switch (graphicsApi) {
         case QRhi::OpenGLES2:
             setSurfaceType(OpenGLSurface);
@@ -309,15 +310,7 @@ void HelloWindow::customInit() {
     projection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
     m_projection = projection;
 
-    auto view = QMatrix4x4();
-    m_eye = QVector3D(0, 0, m_zoom);
-    m_center = QVector3D(0, 0, 0);
-    view.lookAt(
-        m_eye,
-        m_center,
-        QVector3D(0, 1, 0)
-    );
-    m_view = view;
+    m_camera = Camera();
 
     auto modelRotation = QMatrix4x4();
     modelRotation.rotate(m_rotationAngles.y(), -1, 0, 0);
@@ -535,17 +528,9 @@ void HelloWindow::customRender() {
 
         const auto tweenedRatio = getEasingFunction(m_selectionTween.easingFunction)(ratio);
         const auto tweenedEye = lerp(m_selectionTween.startValueEye, m_selectionTween.endValueEye, tweenedRatio);
-        m_eye = tweenedEye;
-        const auto tweenedCenter = lerp(m_selectionTween.startValueCenter, m_selectionTween.endValueCenter, tweenedRatio);
-        m_center = tweenedCenter;
-
-        QMatrix4x4 view;
-        view.lookAt(
-            tweenedEye,
-            tweenedCenter,
-            QVector3D(0, 1, 0)
-        );
-        m_view = view;
+        const auto tweenedCenter = lerp(m_selectionTween.startValueCenter, m_selectionTween.endValueCenter,
+                                        tweenedRatio);
+        m_camera.setLookAt(tweenedEye, tweenedCenter, QVector3D(0, 1, 0));
     }
 
     QRhiResourceUpdateBatch *resourceUpdates = m_rhi->nextResourceUpdateBatch();
@@ -556,7 +541,7 @@ void HelloWindow::customRender() {
         m_initialUpdates = nullptr;
     }
 
-    const auto viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view;
+    const auto viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_camera.view();
     m_viewProjection = viewProjection * m_modelRotation;
 
     if (pendingUpdates != nullptr) {
@@ -707,66 +692,40 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
             const auto newEye = centroidWorld - cameraDirView;
 
             m_selectionTween = SelectionTween{
-                // QVector3D(0, 0, m_zoom),
-                // m_eye,
-                // QVector3D(0, 0, 0),
-                // m_center,
-                m_eye,
+                m_camera.eye(),
                 newEye,
-                m_center,
+                m_camera.center(),
                 centroidWorld,
                 0.1f,
                 0.0f,
                 true,
                 EaseOutCubic
             };
-            // this technically should be set at the end, but also it makes sense only when it's not tween playing
-            m_zoom = -1.0f;
         } else {
             m_selectedEntity = -1;
         }
-
     } else if (event->button() == Qt::RightButton) {
         if (m_selectedEntity != -1) {
-            for (auto & entity : m_entities) {
+            for (auto &entity: m_entities) {
                 entity.m_renderingMode = RenderingMode::Normal;
             }
             m_selectionTween = SelectionTween{
-                m_eye,
+                m_camera.eye(),
                 QVector3D(0, 0, 2.5),
-                m_center,
+                m_camera.center(),
                 QVector3D(0, 0, 0),
                 0.1f,
                 0.0f,
                 true,
                 EaseOutCubic
             };
-            m_zoom = 2.5f;
-            // QMatrix4x4 view;
-            // m_eye = QVector3D(0, 0, m_zoom);
-            // m_center = QVector3D(0, 0, 0);
-            // view.lookAt(
-            //     m_eye,
-            //     m_center,
-            //     QVector3D(0, 1, 0)
-            // );
-            // m_view = view;
+            m_selectedEntity = -1;
         }
     }
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
     if (m_selectedEntity == -1) {
-        m_zoom -= event->angleDelta().y() * 0.005f;
-        QMatrix4x4 view;
-        m_eye = QVector3D(0, 0, m_zoom);
-        m_center = QVector3D(0, 0, 0);
-        view.lookAt(
-            m_eye,
-            m_center,
-            QVector3D(0, 1, 0)
-        );
-        m_view = view;
+        m_camera.zoom(event->angleDelta().y());
     }
 }
-
