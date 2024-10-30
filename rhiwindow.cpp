@@ -15,6 +15,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #include "optional"
+#include "util.h"
+#include "vendor/easing/easing.h"
 
 //! [rhiwindow-ctor]
 RhiWindow::RhiWindow(QRhi::Implementation graphicsApi)
@@ -308,9 +310,11 @@ void HelloWindow::customInit() {
     m_projection = projection;
 
     auto view = QMatrix4x4();
+    m_eye = QVector3D(0, 0, m_zoom);
+    m_center = QVector3D(0, 0, 0);
     view.lookAt(
-        QVector3D(0, 0, m_zoom),
-        QVector3D(0, 0, 0),
+        m_eye,
+        m_center,
         QVector3D(0, 1, 0)
     );
     m_view = view;
@@ -403,8 +407,8 @@ void HelloWindow::customInit() {
     m_sampler->create();
 
     static const quint32 UBUF_SIZE = 64 + 64 + 4;
-    m_opaqueUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
-    m_opaqueUbuf->create();
+    m_normalUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
+    m_normalUbuf->create();
     m_greyedOutUbuf.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
     m_greyedOutUbuf->create();
 
@@ -421,10 +425,8 @@ void HelloWindow::customInit() {
         assert(mesh->HasTextureCoords(0));
 
         m_entities.emplace_back(*mesh, materialIndexToTexture[mesh->mMaterialIndex], m_sampler.get(), *m_rhi,
-                                m_initialUpdates, m_opaqueUbuf.get(), m_greyedOutUbuf.get());
+                                m_initialUpdates, m_normalUbuf.get(), m_greyedOutUbuf.get());
     }
-
-    //! [render-init-1]
 
     // ensureFullscreenTexture(m_sc->surfacePixelSize(), m_initialUpdates);
 
@@ -522,6 +524,30 @@ void HelloWindow::customRender() {
     m_deltaTime = (nowElapsed - m_lastElapsedMillis) / 1000.f;
     m_lastElapsedMillis = nowElapsed;
 
+    if (m_selectionTween.playing) {
+        m_selectionTween.timerSeconds += m_deltaTime;
+        auto ratio = m_selectionTween.timerSeconds / m_selectionTween.durationSeconds;
+
+        if (ratio >= 1.0) {
+            ratio = 1.0;
+            m_selectionTween.playing = false;
+        }
+
+        const auto tweenedRatio = getEasingFunction(m_selectionTween.easingFunction)(ratio);
+        const auto tweenedEye = lerp(m_selectionTween.startValueEye, m_selectionTween.endValueEye, tweenedRatio);
+        m_eye = tweenedEye;
+        const auto tweenedCenter = lerp(m_selectionTween.startValueCenter, m_selectionTween.endValueCenter, tweenedRatio);
+        m_center = tweenedCenter;
+
+        QMatrix4x4 view;
+        view.lookAt(
+            tweenedEye,
+            tweenedCenter,
+            QVector3D(0, 1, 0)
+        );
+        m_view = view;
+    }
+
     QRhiResourceUpdateBatch *resourceUpdates = m_rhi->nextResourceUpdateBatch();
 
     if (m_initialUpdates) {
@@ -530,7 +556,7 @@ void HelloWindow::customRender() {
         m_initialUpdates = nullptr;
     }
 
-    auto viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view;
+    const auto viewProjection = m_rhi->clipSpaceCorrMatrix() * m_projection * m_view;
     m_viewProjection = viewProjection * m_modelRotation;
 
     if (pendingUpdates != nullptr) {
@@ -541,9 +567,9 @@ void HelloWindow::customRender() {
 
     auto normalRenderingMode = RenderingMode::Normal;
     auto greyedOutRenderingMode = RenderingMode::GreyedOut;
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 0, 64, m_modelRotation.constData());
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 64, 64, viewProjection.constData());
-    resourceUpdates->updateDynamicBuffer(m_opaqueUbuf.get(), 128, 4, &normalRenderingMode);
+    resourceUpdates->updateDynamicBuffer(m_normalUbuf.get(), 0, 64, m_modelRotation.constData());
+    resourceUpdates->updateDynamicBuffer(m_normalUbuf.get(), 64, 64, viewProjection.constData());
+    resourceUpdates->updateDynamicBuffer(m_normalUbuf.get(), 128, 4, &normalRenderingMode);
 
     resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 0, 64, m_modelRotation.constData());
     resourceUpdates->updateDynamicBuffer(m_greyedOutUbuf.get(), 64, 64, viewProjection.constData());
@@ -584,7 +610,6 @@ void HelloWindow::customRender() {
     cb->draw(2);
 
     cb->endPass();
-    //! [render-pass-record]
 }
 
 void HelloWindow::handleMouseMove(QMouseEvent *event) {
@@ -619,7 +644,6 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
             return;
         }
 
-        // treat as single click
         const auto screenPosition = event->position();
         std::cout << "Screen pos in pixels: " << screenPosition.x() << ", " << screenPosition.y() << std::endl;
         const float ndcX = (2.0f * screenPosition.x()) / width() - 1.0f;
@@ -677,82 +701,72 @@ void HelloWindow::handleMouseButtonRelease(QMouseEvent *event) {
                     m_entities[i].m_renderingMode = RenderingMode::GreyedOut;
                 }
             }
-            m_zoom = 1.0f;
 
-            const QVector3D cameraDirView(0, 0, -m_zoom);
+            constexpr QVector3D cameraDirView(0, 0, -1.0);
             const auto centroidWorld = m_modelRotation.map(m_entities[m_selectedEntity].m_centroid);
             const auto newEye = centroidWorld - cameraDirView;
-            QMatrix4x4 view;
-            view.lookAt(
+
+            m_selectionTween = SelectionTween{
+                // QVector3D(0, 0, m_zoom),
+                // m_eye,
+                // QVector3D(0, 0, 0),
+                // m_center,
+                m_eye,
                 newEye,
+                m_center,
                 centroidWorld,
-                QVector3D(0, 1, 0)
-            );
-            m_view = view;
+                0.1f,
+                0.0f,
+                true,
+                EaseOutCubic
+            };
+            // this technically should be set at the end, but also it makes sense only when it's not tween playing
+            m_zoom = -1.0f;
         } else {
             m_selectedEntity = -1;
         }
+
     } else if (event->button() == Qt::RightButton) {
         if (m_selectedEntity != -1) {
             for (auto & entity : m_entities) {
                 entity.m_renderingMode = RenderingMode::Normal;
             }
-            m_zoom = 2.5f;
-            QMatrix4x4 view;
-            view.lookAt(
-                QVector3D(0, 0, m_zoom),
+            m_selectionTween = SelectionTween{
+                m_eye,
+                QVector3D(0, 0, 2.5),
+                m_center,
                 QVector3D(0, 0, 0),
-                QVector3D(0, 1, 0)
-            );
-            m_view = view;
+                0.1f,
+                0.0f,
+                true,
+                EaseOutCubic
+            };
+            m_zoom = 2.5f;
+            // QMatrix4x4 view;
+            // m_eye = QVector3D(0, 0, m_zoom);
+            // m_center = QVector3D(0, 0, 0);
+            // view.lookAt(
+            //     m_eye,
+            //     m_center,
+            //     QVector3D(0, 1, 0)
+            // );
+            // m_view = view;
         }
     }
 }
 
 void HelloWindow::handleWheel(QWheelEvent *event) {
-    m_zoom -= event->angleDelta().y() * 0.005f;
-    QMatrix4x4 view;
-    view.lookAt(
-        QVector3D(0, 0, m_zoom),
-        QVector3D(0, 0, 0),
-        QVector3D(0, 1, 0)
-    );
-    m_view = view;
+    if (m_selectedEntity == -1) {
+        m_zoom -= event->angleDelta().y() * 0.005f;
+        QMatrix4x4 view;
+        m_eye = QVector3D(0, 0, m_zoom);
+        m_center = QVector3D(0, 0, 0);
+        view.lookAt(
+            m_eye,
+            m_center,
+            QVector3D(0, 1, 0)
+        );
+        m_view = view;
+    }
 }
 
-std::optional<float> HelloWindow::doesRayIntersectTriangle(const QVector3D rayOriginWorld,
-                                                           const QVector3D rayDirWorld,
-                                                           const QVector3D v0,
-                                                           const QVector3D v1,
-                                                           const QVector3D v2) {
-    constexpr float EPSILON = 1e-6;
-
-    const QVector3D edge1 = v1 - v0;
-    const QVector3D edge2 = v2 - v0;
-    const QVector3D h = QVector3D::crossProduct(rayDirWorld, edge2);
-    const float a = QVector3D::dotProduct(edge1, h);
-
-    if (fabs(a) < EPSILON) {
-        return std::nullopt;
-    }
-
-    const float f = 1.0 / a;
-    const QVector3D s = rayOriginWorld - v0;
-    const float u = f * QVector3D::dotProduct(s, h);
-    if (u < 0.0 || u > 1.0) {
-        return std::nullopt;
-    }
-
-    const QVector3D q = QVector3D::crossProduct(s, edge1);
-    const float v = f * QVector3D::dotProduct(rayDirWorld, q);
-    if (v < 0.0 || u + v > 1.0) {
-        return std::nullopt;
-    }
-
-    const float t = f * QVector3D::dotProduct(edge2, q);
-    if (t > EPSILON) {
-        return t;
-    }
-
-    return std::nullopt;
-}

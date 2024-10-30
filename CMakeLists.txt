@@ -24,6 +24,9 @@ qt_add_executable(rhiwindow
         stb_image.h
         Entity.cpp
         Entity.h
+        vendor/easing/easing.cpp
+        vendor/easing/easing.h
+        util.h
 )
 
 set_target_properties(rhiwindow PROPERTIES

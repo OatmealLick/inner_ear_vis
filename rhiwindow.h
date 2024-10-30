@@ -10,6 +10,19 @@
 
 #include "Entity.h"
 #include "assimp/texture.h"
+#include "vendor/easing/easing.h"
+
+struct SelectionTween {
+    QVector3D startValueEye;
+    QVector3D endValueEye;
+    QVector3D startValueCenter;
+    QVector3D endValueCenter;
+    float durationSeconds = 0.0f;
+    float timerSeconds = 0.0f;
+    bool playing = false;
+
+    easing_functions easingFunction = EaseInCubic;
+};
 
 class RhiWindow : public QWindow
 {
@@ -56,6 +69,9 @@ protected:
     QMatrix4x4 m_projection;
     QMatrix4x4 m_modelRotation;
 
+    QVector3D m_eye;
+    QVector3D m_center;
+
 private:
     void init();
     void resizeSwapChain();
@@ -85,10 +101,7 @@ public:
 private:
     // void ensureFullscreenTexture(const QSize &pixelSize, QRhiResourceUpdateBatch *u);
 
-    // returns the distance from the ray origin if intersects
-    static std::optional<float> doesRayIntersectTriangle(QVector3D rayOriginWorld,  QVector3D rayDirWorld,  QVector3D v0,  QVector3D v1,  QVector3D v2);
-
-    std::unique_ptr<QRhiBuffer> m_opaqueUbuf;
+    std::unique_ptr<QRhiBuffer> m_normalUbuf;
     std::unique_ptr<QRhiBuffer> m_greyedOutUbuf;
     std::unique_ptr<QRhiSampler> m_sampler;
     std::unique_ptr<QRhiGraphicsPipeline> m_colorPipeline;
@@ -110,6 +123,8 @@ private:
     float m_rotation = 0;
     float m_opacity = 1.0f;
     int m_opacityDir = -1;
+
+    SelectionTween m_selectionTween;
 };
 
 #endif
