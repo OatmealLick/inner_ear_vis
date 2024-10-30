@@ -3,7 +3,7 @@
 
 #include <QGuiApplication>
 #include <QCommandLineParser>
-#include "rhiwindow.h"
+#include "inner_ear_vis.h"
 
 int main(int argc, char **argv)
 {
@@ -69,7 +69,7 @@ int main(int argc, char **argv)
 
 //! [api-setup]
 
-    HelloWindow window(graphicsApi);
+    AppWindow window(graphicsApi);
 
     window.resize(1280, 720);
     window.setTitle(QCoreApplication::applicationName() + QLatin1String(" - ") + window.graphicsApiName());
