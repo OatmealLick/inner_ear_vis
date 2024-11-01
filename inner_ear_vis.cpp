@@ -469,7 +469,7 @@ void AppWindow::customRender() {
         cb->draw(entity.GetNumVertices());
     }
 
-    if (!m_drawRays) {
+    if (m_drawRays) {
         cb->setGraphicsPipeline(m_rayPipeline.get());
         cb->setShaderResources();
         const QRhiCommandBuffer::VertexInput rayVbufBinding(m_rayVertexBuffer.get(), 0);

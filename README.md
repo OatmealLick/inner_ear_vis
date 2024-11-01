@@ -9,9 +9,9 @@ Build the project using CMake.
 
 ![Inner Ear seen from the app](./inner_ear.png)
 
-In the app use left mouse button to rotate the model and mouse wheel to zoom in and out.
-Press left mouse button on a piece of the ear to select it (zooming in and greying out other parts).
-Press right mouse button to deselect the piece and come back to standard view.
+In the app use **left mouse button** to rotate the model and **mouse wheel** to zoom in and out.
+Press **left mouse button** on a piece of the ear to select it (zooming in and greying out other parts).
+Press **right mouse button** to deselect the piece and come back to standard view.
 
 ![Tympanic Membrane closeup](./inner_ear_selected.png)
 
